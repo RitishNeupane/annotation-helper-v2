@@ -14,7 +14,7 @@
         <img src="../assets/icon48.png" alt="Logo" class="brand-logo">
         <div class="brand-text">
           <h1>MST Annotation Helper</h1>
-          <span class="version">v1.1.0</span>
+          <span class="version">v1.3.0</span>
         </div>
       </div>
       <div class="status-badge active" id="statusBadge">
@@ -22,6 +22,16 @@
         <span id="statusText">Active on MST</span>
       </div>
     </header>
+
+    <!-- Timing Manager Featured Action Button -->
+    <button class="timing-manager-btn" id="btnOpenTimingManager" title="Open Annotation Timing Manager to reorder timestamps">
+      <span class="btn-icon">⚡</span>
+      <div class="btn-text-block">
+        <span class="btn-main-text">Save & Manage Timing</span>
+        <span class="btn-sub-text">Reorder, export & batch-apply timestamps</span>
+      </div>
+      <span class="btn-arrow">➔</span>
+    </button>
 
     <!-- Master Switch -->
     <div class="card master-card">
@@ -115,9 +125,9 @@
       </div>
     </section>
 
-    <!-- Advanced Settings Section -->
+    <!-- Preferences Section -->
     <section class="section">
-      <h2 class="section-title">Preferences & Fine-Tuning</h2>
+      <h2 class="section-title">Preferences</h2>
       <div class="settings-grid">
         <div class="setting-item">
           <label for="seekStepInput">Seek Step (sec)</label>
@@ -130,6 +140,17 @@
       </div>
 
       <div class="card-list" style="margin-top: 10px;">
+        <div class="card item-card">
+          <div class="card-info">
+            <span class="card-title">Floating Page Button</span>
+            <span class="card-desc">Show "Manage Timings" button on web page</span>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="toggleFloatingButton" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
         <div class="card item-card">
           <div class="card-info">
             <span class="card-title">On-Screen HUD Toasts</span>
@@ -147,10 +168,11 @@
     <section class="section">
       <h2 class="section-title">Shortcut Guide</h2>
       <div class="cheat-sheet">
+        <div class="cheat-row"><span class="key">Alt + M</span><span class="desc">Open Timing Manager</span></div>
         <div class="cheat-row"><span class="key">Space</span><span class="desc">Pause / Play Main Audio</span></div>
         <div class="cheat-row"><span class="key">1 - 9</span><span class="desc">Select Annotation 1..9</span></div>
-        <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (exact player time)</span></div>
-        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (exact player time)</span></div>
+        <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (player time)</span></div>
+        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (player time)</span></div>
         <div class="cheat-row"><span class="key">Shift + Enter</span><span class="desc">Save / Update Annotation</span></div>
         <div class="cheat-row"><span class="key">← / →</span><span class="desc">Seek ±5 seconds</span></div>
         <div class="cheat-row"><span class="key">↑ / ↓</span><span class="desc">Speed ±0.5x</span></div>

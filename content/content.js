@@ -1,9 +1,9 @@
-// content.js - mySecondTeacher Annotation Helper Content Script (v1.2.0)
+// content.js - mySecondTeacher Annotation Helper Content Script (v1.3.0)
 
 (function () {
   'use strict';
 
-  // Extension Settings Defaults
+  // --- Extension Settings Defaults ---
   let settings = {
     enabled: true,
     shortcutSpace: true,
@@ -12,6 +12,7 @@
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
+    showFloatingButton: true,
     seekStep: 5,
     speedStep: 0.5,
     autoUpdate: false,
@@ -19,11 +20,14 @@
     precision: 3
   };
 
-  // Extension State
+  // --- Extension State ---
   let selectedIndex = 1; // 1-based index of selected card
   let hudContainer = null;
+  let timingModalContainer = null;
+  let scannedTimings = []; // Array of { originalIndex, startTime, endTime, duration }
+  let reorderedTimings = []; // Working array of timings currently arranged by the user
 
-  // Load Settings
+  // --- Load Settings ---
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
     chrome.storage.sync.get(settings, (items) => {
       if (items) {
@@ -38,6 +42,15 @@
           settings[key] = changes[key].newValue;
         }
         updateSelectionHighlight();
+        updateFloatingButtonVisibility();
+      }
+    });
+
+    // Listen for messages from popup
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message && message.action === 'openTimingManager') {
+        openTimingManagerModal();
+        sendResponse({ success: true });
       }
     });
   } else {
@@ -46,6 +59,7 @@
 
   function initExtension() {
     createHudContainer();
+    createFloatingLauncherButton();
     document.addEventListener('keydown', handleKeyDown, true);
     setTimeout(updateSelectionHighlight, 1000);
   }
@@ -149,7 +163,6 @@
     let pauseBtn = null;
 
     for (let svg of allSvgs) {
-      // Exclude SVGs inside annotation cards
       let parent = svg.parentElement;
       let isAnnotation = false;
       while (parent && parent !== document.body) {
@@ -260,8 +273,6 @@
 
     selectedIndex = index;
     updateSelectionHighlight();
-
-    // Blur focus so typing cursor is NOT left inside start/end time inputs!
     blurActiveElement();
 
     const targetCard = cards[selectedIndex - 1];
@@ -278,14 +289,11 @@
     if (!card) return;
 
     const buttons = Array.from(card.querySelectorAll('button'));
-    
-    // Find Save or Update or Add button
     let targetBtn = buttons.find(b => {
       const text = b.textContent.trim().toLowerCase();
       return text.includes('save') || text.includes('update') || text.includes('add');
     });
 
-    // Fallback: find any button in card that isn't Remove/Delete
     if (!targetBtn) {
       targetBtn = buttons.find(b => {
         const text = b.textContent.trim().toLowerCase();
@@ -331,9 +339,575 @@
     return `${mmStr}:${ssStr}.${msStr}`;
   }
 
+  // =========================================================================
+  // --- ANNOTATION TIMING MANAGER & MOVER UI MODULE ---
+  // =========================================================================
+
+  // Scan live annotation cards from the DOM
+  function scanPageAnnotations() {
+    const cards = getAnnotationCards();
+    const list = [];
+
+    cards.forEach((card, idx) => {
+      const num = idx + 1;
+      const startInput = card.querySelector('input[name="startTime"]');
+      const endInput = card.querySelector('input[name="endTime"]');
+
+      const startTime = startInput ? parseFloat(startInput.value) || 0 : 0;
+      const endTime = endInput ? parseFloat(endInput.value) || 0 : 0;
+      const duration = Math.max(0, endTime - startTime);
+
+      list.push({
+        originalIndex: num,
+        startTime: startTime,
+        endTime: endTime,
+        duration: duration
+      });
+    });
+
+    scannedTimings = JSON.parse(JSON.stringify(list));
+    reorderedTimings = JSON.parse(JSON.stringify(list));
+    return list;
+  }
+
+  // Floating Launcher Button on page
+  function createFloatingLauncherButton() {
+    if (document.getElementById('mst-floating-launcher')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'mst-floating-launcher';
+    btn.className = 'mst-floating-btn';
+    btn.innerHTML = `<span>⏱️</span><span>Manage Timings</span>`;
+    btn.title = 'Open Annotation Timing Manager (Alt+M)';
+    btn.addEventListener('click', () => {
+      openTimingManagerModal();
+    });
+
+    document.body.appendChild(btn);
+    updateFloatingButtonVisibility();
+  }
+
+  function updateFloatingButtonVisibility() {
+    const btn = document.getElementById('mst-floating-launcher');
+    if (btn) {
+      btn.style.display = (settings.enabled && settings.showFloatingButton !== false) ? 'flex' : 'none';
+    }
+  }
+
+  // Open & Render Timing Manager Modal Dialog
+  function openTimingManagerModal() {
+    scanPageAnnotations();
+
+    if (scannedTimings.length === 0) {
+      showToast('⚠️', 'No audio annotations found on this page to manage');
+      return;
+    }
+
+    if (!timingModalContainer) {
+      timingModalContainer = document.createElement('div');
+      timingModalContainer.id = 'mst-timing-modal-root';
+      document.body.appendChild(timingModalContainer);
+    }
+
+    renderModalContent();
+    timingModalContainer.style.display = 'flex';
+  }
+
+  function closeTimingManagerModal() {
+    if (timingModalContainer) {
+      timingModalContainer.style.display = 'none';
+    }
+  }
+
+  // Render modal dialog UI
+  function renderModalContent() {
+    if (!timingModalContainer) return;
+
+    timingModalContainer.innerHTML = `
+      <div class="mst-modal-overlay">
+        <div class="mst-modal-card">
+          
+          <!-- Header -->
+          <div class="mst-modal-header">
+            <div class="mst-modal-title-group">
+              <span class="mst-modal-icon">⏱️</span>
+              <div>
+                <h3 class="mst-modal-title">Audio Annotation Timing Manager</h3>
+                <p class="mst-modal-subtitle">Reorder timestamps to fix visual sequence errors, backup, or batch-apply to page</p>
+              </div>
+            </div>
+            <button class="mst-modal-close-btn" id="mstModalCloseBtn" title="Close (Esc)">&times;</button>
+          </div>
+
+          <!-- Toolbar -->
+          <div class="mst-modal-toolbar">
+            <div class="mst-toolbar-left">
+              <button class="mst-tool-btn" id="mstBtnScan" title="Re-scan annotations currently on the page">
+                <span>🔄</span> Scan Page
+              </button>
+              <button class="mst-tool-btn" id="mstBtnReset" title="Reset order to original scanned page order">
+                <span>↩️</span> Reset Order
+              </button>
+            </div>
+            <div class="mst-toolbar-right">
+              <button class="mst-tool-btn" id="mstBtnExport" title="Export timings as readable text / backup file">
+                <span>💾</span> Export Timings (.txt)
+              </button>
+              <button class="mst-tool-btn" id="mstBtnImport" title="Import timings from a previously saved file">
+                <span>📂</span> Load Timings (.txt)
+              </button>
+              <input type="file" id="mstFileInput" accept=".txt,.json" style="display: none;">
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="mst-table-container">
+            <table class="mst-timing-table">
+              <thead>
+                <tr>
+                  <th style="width: 100px;">Slot (Page)</th>
+                  <th style="width: 90px; text-align: center;">Reorder</th>
+                  <th>Source Timing</th>
+                  <th style="width: 130px;">Start Time (s)</th>
+                  <th style="width: 130px;">End Time (s)</th>
+                  <th style="width: 110px;">Duration</th>
+                  <th style="width: 120px;">Status</th>
+                </tr>
+              </thead>
+              <tbody id="mstTimingTableBody">
+                <!-- Rows injected dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Footer Actions -->
+          <div class="mst-modal-footer">
+            <div class="mst-footer-info" id="mstFooterStatus">
+              ${scannedTimings.length} annotations loaded. Drag rows or use ▲/▼ to arrange timings.
+            </div>
+            <div class="mst-footer-buttons">
+              <button class="mst-btn mst-btn-secondary" id="mstBtnCancel">Cancel</button>
+              <button class="mst-btn mst-btn-primary" id="mstBtnApply">
+                <span>🚀</span> Apply Changes to Page
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    renderTableRows();
+    attachModalEvents();
+  }
+
+  // Render individual rows in the table
+  function renderTableRows() {
+    const tbody = document.getElementById('mstTimingTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    reorderedTimings.forEach((item, slotIndex) => {
+      const targetSlotNumber = slotIndex + 1;
+      const isMoved = item.originalIndex !== targetSlotNumber;
+      
+      const tr = document.createElement('tr');
+      tr.className = `mst-timing-row ${isMoved ? 'mst-row-moved' : ''}`;
+      tr.dataset.index = slotIndex;
+      tr.draggable = true;
+
+      tr.innerHTML = `
+        <td class="mst-cell-slot">
+          <span class="mst-slot-badge">Slot #${targetSlotNumber}</span>
+        </td>
+        <td class="mst-cell-movers">
+          <div class="mst-mover-controls">
+            <button class="mst-move-btn btn-up" data-index="${slotIndex}" ${slotIndex === 0 ? 'disabled' : ''} title="Move Up">▲</button>
+            <span class="mst-drag-handle" title="Drag to reorder">⋮⋮</span>
+            <button class="mst-move-btn btn-down" data-index="${slotIndex}" ${slotIndex === reorderedTimings.length - 1 ? 'disabled' : ''} title="Move Down">▼</button>
+          </div>
+        </td>
+        <td class="mst-cell-source">
+          <span class="mst-source-tag ${isMoved ? 'tag-moved' : 'tag-original'}">
+            Timing from #${item.originalIndex}
+          </span>
+        </td>
+        <td class="mst-cell-time">
+          <input type="number" step="0.001" min="0" class="mst-time-input input-start" data-index="${slotIndex}" value="${item.startTime}">
+          <span class="mst-time-subtext">${formatTimeDisplay(item.startTime)}</span>
+        </td>
+        <td class="mst-cell-time">
+          <input type="number" step="0.001" min="0" class="mst-time-input input-end" data-index="${slotIndex}" value="${item.endTime}">
+          <span class="mst-time-subtext">${formatTimeDisplay(item.endTime)}</span>
+        </td>
+        <td class="mst-cell-duration">
+          <span class="mst-duration-badge">${(Math.max(0, item.endTime - item.startTime)).toFixed(2)}s</span>
+        </td>
+        <td class="mst-cell-status">
+          ${isMoved 
+            ? `<span class="mst-status-pill pill-moved">Moved #${item.originalIndex} → #${targetSlotNumber}</span>`
+            : `<span class="mst-status-pill pill-original">Unchanged</span>`
+          }
+        </td>
+      `;
+
+      tbody.appendChild(tr);
+    });
+
+    attachRowEvents();
+  }
+
+  // Row move operation: Splice and Shift (Drag item to new slot, shifting all others down)
+  function moveTimingItem(fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= reorderedTimings.length || toIndex >= reorderedTimings.length) {
+      return;
+    }
+
+    // Splice item out and insert at toIndex (Shift down / up)
+    const [movedItem] = reorderedTimings.splice(fromIndex, 1);
+    reorderedTimings.splice(toIndex, 0, movedItem);
+
+    renderTableRows();
+  }
+
+  // Attach drag & drop + Up/Down button events
+  function attachRowEvents() {
+    const tbody = document.getElementById('mstTimingTableBody');
+    if (!tbody) return;
+
+    // Up / Down Button Handlers
+    tbody.querySelectorAll('.btn-up').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index, 10);
+        if (idx > 0) moveTimingItem(idx, idx - 1);
+      });
+    });
+
+    tbody.querySelectorAll('.btn-down').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index, 10);
+        if (idx < reorderedTimings.length - 1) moveTimingItem(idx, idx + 1);
+      });
+    });
+
+    // Time input direct edits
+    tbody.querySelectorAll('.input-start').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index, 10);
+        const val = parseFloat(e.currentTarget.value) || 0;
+        reorderedTimings[idx].startTime = val;
+        reorderedTimings[idx].duration = Math.max(0, reorderedTimings[idx].endTime - val);
+        renderTableRows();
+      });
+    });
+
+    tbody.querySelectorAll('.input-end').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.index, 10);
+        const val = parseFloat(e.currentTarget.value) || 0;
+        reorderedTimings[idx].endTime = val;
+        reorderedTimings[idx].duration = Math.max(0, val - reorderedTimings[idx].startTime);
+        renderTableRows();
+      });
+    });
+
+    // HTML5 Drag & Drop
+    let draggedIndex = null;
+
+    tbody.querySelectorAll('.mst-timing-row').forEach(row => {
+      row.addEventListener('dragstart', (e) => {
+        draggedIndex = parseInt(row.dataset.index, 10);
+        row.classList.add('mst-dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', draggedIndex);
+      });
+
+      row.addEventListener('dragend', () => {
+        row.classList.remove('mst-dragging');
+        tbody.querySelectorAll('.mst-timing-row').forEach(r => r.classList.remove('mst-drag-over'));
+      });
+
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('mst-drag-over');
+      });
+
+      row.addEventListener('dragleave', () => {
+        row.classList.remove('mst-drag-over');
+      });
+
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('mst-drag-over');
+        const targetIndex = parseInt(row.dataset.index, 10);
+        if (draggedIndex !== null && draggedIndex !== targetIndex) {
+          moveTimingItem(draggedIndex, targetIndex);
+        }
+      });
+    });
+  }
+
+  // Attach modal toolbar & footer events
+  function attachModalEvents() {
+    const closeBtn = document.getElementById('mstModalCloseBtn');
+    const cancelBtn = document.getElementById('mstBtnCancel');
+    const scanBtn = document.getElementById('mstBtnScan');
+    const resetBtn = document.getElementById('mstBtnReset');
+    const exportBtn = document.getElementById('mstBtnExport');
+    const importBtn = document.getElementById('mstBtnImport');
+    const fileInput = document.getElementById('mstFileInput');
+    const applyBtn = document.getElementById('mstBtnApply');
+
+    if (closeBtn) closeBtn.addEventListener('click', closeTimingManagerModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeTimingManagerModal);
+
+    if (scanBtn) {
+      scanBtn.addEventListener('click', () => {
+        scanPageAnnotations();
+        renderTableRows();
+        showToast('🔄', `Scanned ${scannedTimings.length} annotations from page`);
+      });
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        reorderedTimings = JSON.parse(JSON.stringify(scannedTimings));
+        renderTableRows();
+        showToast('↩️', 'Reset table to original page order');
+      });
+    }
+
+    if (exportBtn) {
+      exportBtn.addEventListener('click', exportTimingsToFile);
+    }
+
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          importTimingsFromFile(evt.target.result);
+          fileInput.value = '';
+        };
+        reader.readAsText(file);
+      });
+    }
+
+    if (applyBtn) {
+      applyBtn.addEventListener('click', applyTimingsToPage);
+    }
+  }
+
+  // --- Export Timings to Text File ---
+  function exportTimingsToFile() {
+    if (reorderedTimings.length === 0) {
+      showToast('⚠️', 'No timings to export');
+      return;
+    }
+
+    const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+    const pageUrl = window.location.href;
+
+    let content = `=================================================================\n`;
+    content += `mySecondTeacher Annotation Timings Export\n`;
+    content += `Generated: ${new Date().toLocaleString()}\n`;
+    content += `Page URL: ${pageUrl}\n`;
+    content += `Total Annotations: ${reorderedTimings.length}\n`;
+    content += `=================================================================\n\n`;
+    content += `SLOT | SOURCE TIMING | START TIME        | END TIME          | DURATION\n`;
+    content += `-----------------------------------------------------------------\n`;
+
+    reorderedTimings.forEach((item, idx) => {
+      const slot = `Slot #${idx + 1}`.padEnd(6);
+      const src = `From #${item.originalIndex}`.padEnd(14);
+      const start = `${formatTimeDisplay(item.startTime)} (${item.startTime}s)`.padEnd(18);
+      const end = `${formatTimeDisplay(item.endTime)} (${item.endTime}s)`.padEnd(18);
+      const dur = `${(Math.max(0, item.endTime - item.startTime)).toFixed(2)}s`;
+      content += `${slot} | ${src} | ${start} | ${end} | ${dur}\n`;
+    });
+
+    content += `\n\n=================================================================\n`;
+    content += `[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]\n`;
+    content += `=================================================================\n`;
+    content += JSON.stringify({
+      version: "1.3.0",
+      pageUrl: pageUrl,
+      timings: reorderedTimings
+    }, null, 2);
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `annotation_timings_${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('💾', 'Exported timings text file successfully');
+  }
+
+  // --- Import Timings from File ---
+  function importTimingsFromFile(text) {
+    try {
+      let importedList = null;
+
+      // Try parsing embedded JSON block first
+      if (text.includes('[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]')) {
+        const parts = text.split('[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]');
+        if (parts.length > 1) {
+          const jsonStr = parts[1].replace(/^[=\s]+/, '');
+          const data = JSON.parse(jsonStr);
+          if (data && Array.isArray(data.timings)) {
+            importedList = data.timings;
+          }
+        }
+      }
+
+      // Try raw JSON parse if file was pure JSON
+      if (!importedList) {
+        try {
+          const data = JSON.parse(text);
+          if (Array.isArray(data)) importedList = data;
+          else if (data && Array.isArray(data.timings)) importedList = data.timings;
+        } catch (e) {}
+      }
+
+      // Fallback: Parse line-by-line formatted text
+      if (!importedList) {
+        importedList = [];
+        const lines = text.split('\n');
+        lines.forEach(line => {
+          // Look for: Slot #1 | From #... | mm:ss.ms (XX.XXs) | mm:ss.ms (YY.YYs)
+          const match = line.match(/Slot\s*#(\d+).*?\(([\d.]+)s\).*?\(([\d.]+)s\)/);
+          if (match) {
+            importedList.push({
+              originalIndex: parseInt(match[1], 10),
+              startTime: parseFloat(match[2]),
+              endTime: parseFloat(match[3]),
+              duration: Math.max(0, parseFloat(match[3]) - parseFloat(match[2]))
+            });
+          }
+        });
+      }
+
+      if (!importedList || importedList.length === 0) {
+        alert('Could not parse timing data from the selected file. Please make sure it is a valid exported timing text file.');
+        return;
+      }
+
+      reorderedTimings = importedList.map((item, i) => ({
+        originalIndex: item.originalIndex || (i + 1),
+        startTime: typeof item.startTime === 'number' ? item.startTime : parseFloat(item.startTime) || 0,
+        endTime: typeof item.endTime === 'number' ? item.endTime : parseFloat(item.endTime) || 0,
+        duration: Math.max(0, (item.endTime || 0) - (item.startTime || 0))
+      }));
+
+      renderTableRows();
+      showToast('📂', `Loaded ${reorderedTimings.length} timings from file`);
+    } catch (err) {
+      alert(`Error reading timing file: ${err.message}`);
+    }
+  }
+
+  // --- Apply Changes to Page with Safe Sequential Auto-Save ---
+  async function applyTimingsToPage() {
+    const cards = getAnnotationCards();
+    if (cards.length === 0) {
+      alert('No annotation cards found on the page to update.');
+      return;
+    }
+
+    const applyBtn = document.getElementById('mstBtnApply');
+    const footerStatus = document.getElementById('mstFooterStatus');
+    if (applyBtn) applyBtn.disabled = true;
+
+    showToast('🚀', 'Applying reordered timings to page...');
+
+    const totalToApply = Math.min(cards.length, reorderedTimings.length);
+
+    for (let i = 0; i < totalToApply; i++) {
+      const targetSlotNum = i + 1;
+      const timing = reorderedTimings[i];
+      const card = cards[i];
+
+      if (footerStatus) {
+        footerStatus.innerHTML = `⏳ Updating Slot #${targetSlotNum} / ${totalToApply} (Start: ${timing.startTime}s, End: ${timing.endTime}s)...`;
+      }
+
+      const startInput = card.querySelector('input[name="startTime"]');
+      const endInput = card.querySelector('input[name="endTime"]');
+
+      if (startInput) {
+        setNativeInputValue(startInput, timing.startTime);
+      }
+      if (endInput) {
+        setNativeInputValue(endInput, timing.endTime);
+      }
+
+      // Safe pause between updates so React and network requests process cleanly
+      await new Promise(resolve => setTimeout(resolve, 150));
+
+      // Trigger Save / Update button on this card
+      const buttons = Array.from(card.querySelectorAll('button'));
+      let saveOrUpdateBtn = buttons.find(b => {
+        const text = b.textContent.trim().toLowerCase();
+        return text.includes('save') || text.includes('update') || text.includes('add');
+      });
+
+      if (!saveOrUpdateBtn) {
+        saveOrUpdateBtn = buttons.find(b => {
+          const text = b.textContent.trim().toLowerCase();
+          return !text.includes('remove') && !text.includes('delete') && !text.includes('cancel');
+        });
+      }
+
+      if (saveOrUpdateBtn) {
+        saveOrUpdateBtn.disabled = false;
+        triggerClick(saveOrUpdateBtn);
+      }
+
+      // Another brief pause for backend database save
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+
+    if (footerStatus) {
+      footerStatus.innerHTML = `✅ Successfully applied and saved timings for all ${totalToApply} annotations!`;
+    }
+    if (applyBtn) applyBtn.disabled = false;
+
+    // Rescan fresh values from page
+    scanPageAnnotations();
+    renderTableRows();
+
+    showToast('✅', `Applied and saved ${totalToApply} annotation timings!`);
+
+    setTimeout(() => {
+      closeTimingManagerModal();
+    }, 1200);
+  }
+
   // --- Main Keyboard Event Listener ---
   function handleKeyDown(e) {
     if (!settings.enabled) return;
+
+    // Alt + M: Open Timing Manager
+    if (e.altKey && (e.key === 'm' || e.key === 'M')) {
+      e.preventDefault();
+      openTimingManagerModal();
+      return;
+    }
+
+    // Escape: Close Modal if open
+    if (e.key === 'Escape' && timingModalContainer && timingModalContainer.style.display !== 'none') {
+      closeTimingManagerModal();
+      return;
+    }
 
     // 1: Spacebar to Toggle Pause/Play Main Audio (WORKS REGARDLESS OF FOCUSED ELEMENT!)
     if (e.code === 'Space' || e.key === ' ') {
@@ -374,7 +948,7 @@
       return;
     }
 
-    // Bypass remaining shortcuts if user is actively typing in a non-annotation text field (e.g. section title input)
+    // Bypass remaining shortcuts if user is actively typing in a non-annotation text field
     if (isInputActive(e)) return;
 
     const mainAudio = getMainAudioElement();

@@ -1,4 +1,4 @@
-/* Modern Dark Theme CSS for mySecondTeacher Annotation Helper Popup */
+/* Modern Dark Theme CSS for mySecondTeacher Annotation Helper Popup (v1.3.0) */
 
 :root {
   --bg-primary: #0f172a;
@@ -86,6 +86,61 @@ body {
   border-radius: 50%;
   background-color: var(--success-color);
   box-shadow: 0 0 6px var(--success-color);
+}
+
+/* Timing Manager Featured Action Button */
+.timing-manager-btn {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.timing-manager-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #4338ca, #4f46e5);
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.5);
+}
+
+.timing-manager-btn:active {
+  transform: translateY(0);
+}
+
+.timing-manager-btn .btn-icon {
+  font-size: 20px;
+}
+
+.timing-manager-btn .btn-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.timing-manager-btn .btn-main-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.timing-manager-btn .btn-sub-text {
+  font-size: 10px;
+  color: #e0e7ff;
+}
+
+.timing-manager-btn .btn-arrow {
+  font-size: 14px;
+  color: #ffffff;
 }
 
 /* Cards */

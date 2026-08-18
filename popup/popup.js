@@ -1,4 +1,4 @@
-// popup.js - mySecondTeacher Annotation Helper Popup Logic
+// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.3.0)
 
 document.addEventListener('DOMContentLoaded', () => {
   const masterToggle = document.getElementById('masterToggle');
@@ -11,8 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   const seekStepInput = document.getElementById('seekStepInput');
   const speedStepInput = document.getElementById('speedStepInput');
+  const toggleFloatingButton = document.getElementById('toggleFloatingButton');
   const toggleToast = document.getElementById('toggleToast');
   
+  const btnOpenTimingManager = document.getElementById('btnOpenTimingManager');
   const statusBadge = document.getElementById('statusBadge');
   const statusText = document.getElementById('statusText');
 
@@ -24,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
+    showFloatingButton: true,
     seekStep: 5,
     speedStep: 0.5,
     autoUpdate: false,
@@ -66,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     seekStepInput.value = stored.seekStep || 5;
     speedStepInput.value = stored.speedStep || 0.5;
+    toggleFloatingButton.checked = stored.showFloatingButton !== false;
     toggleToast.checked = stored.showToast;
   });
 
@@ -81,13 +85,14 @@ document.addEventListener('DOMContentLoaded', () => {
       shortcutSpeed: toggleSpeed.checked,
       seekStep: Math.max(1, parseInt(seekStepInput.value, 10) || 5),
       speedStep: Math.max(0.1, parseFloat(speedStepInput.value) || 0.5),
+      showFloatingButton: toggleFloatingButton.checked,
       showToast: toggleToast.checked
     };
 
     chrome.storage.sync.set(updated);
   }
 
-  // Attach Event Listeners
+  // Attach Event Listeners to Inputs
   const inputs = [
     masterToggle,
     toggleSpace,
@@ -98,10 +103,26 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSpeed,
     seekStepInput,
     speedStepInput,
+    toggleFloatingButton,
     toggleToast
   ];
 
   inputs.forEach(input => {
     input.addEventListener('change', saveSettings);
   });
+
+  // Open Timing Manager in Active Tab
+  if (btnOpenTimingManager) {
+    btnOpenTimingManager.addEventListener('click', () => {
+      if (chrome.tabs && chrome.tabs.query) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs[0] && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, { action: 'openTimingManager' }, () => {
+              window.close();
+            });
+          }
+        });
+      }
+    });
+  }
 });
