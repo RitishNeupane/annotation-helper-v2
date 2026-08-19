@@ -1,10 +1,11 @@
-// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.4.0)
+// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.5.0)
 
 document.addEventListener('DOMContentLoaded', () => {
   const masterToggle = document.getElementById('masterToggle');
   const toggleSpace = document.getElementById('toggleSpace');
   const toggleNumbers = document.getElementById('toggleNumbers');
   const toggleBrackets = document.getElementById('toggleBrackets');
+  const toggleAudioEnd = document.getElementById('toggleAudioEnd');
   const toggleSave = document.getElementById('toggleSave');
   const toggleSeek = document.getElementById('toggleSeek');
   const toggleSpeed = document.getElementById('toggleSpeed');
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcutSpace: true,
     shortcutNumbers: true,
     shortcutBrackets: true,
+    shortcutAudioEnd: true,
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
@@ -68,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSpace.checked = stored.shortcutSpace;
     toggleNumbers.checked = stored.shortcutNumbers;
     toggleBrackets.checked = stored.shortcutBrackets;
+    toggleAudioEnd.checked = stored.shortcutAudioEnd !== false;
     toggleSave.checked = stored.shortcutSave;
     toggleSeek.checked = stored.shortcutSeek;
     toggleSpeed.checked = stored.shortcutSpeed;
@@ -88,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
       shortcutSpace: toggleSpace.checked,
       shortcutNumbers: toggleNumbers.checked,
       shortcutBrackets: toggleBrackets.checked,
+      shortcutAudioEnd: toggleAudioEnd.checked,
       shortcutSave: toggleSave.checked,
       shortcutSeek: toggleSeek.checked,
       shortcutSpeed: toggleSpeed.checked,
@@ -108,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSpace,
     toggleNumbers,
     toggleBrackets,
+    toggleAudioEnd,
     toggleSave,
     toggleSeek,
     toggleSpeed,

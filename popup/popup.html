@@ -14,7 +14,7 @@
         <img src="../assets/icon48.png" alt="Logo" class="brand-logo">
         <div class="brand-text">
           <h1>MST Annotation Helper</h1>
-          <span class="version">v1.4.0</span>
+          <span class="version">v1.5.0</span>
         </div>
       </div>
       <div class="status-badge active" id="statusBadge">
@@ -110,6 +110,18 @@
         </div>
 
         <div class="card item-card">
+          <div class="shortcut-icon audio-end-icon">🏁</div>
+          <div class="card-info">
+            <span class="card-title">Backtick Key `<span class="key-badge">`</span>`</span>
+            <span class="card-desc">Set End Time to full audio duration</span>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="toggleAudioEnd" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="card item-card">
           <div class="shortcut-icon save-icon">💾</div>
           <div class="card-info">
             <span class="card-title">Shift + Enter</span>
@@ -191,11 +203,12 @@
     <section class="section">
       <h2 class="section-title">Shortcut Guide</h2>
       <div class="cheat-sheet">
+        <div class="cheat-row"><span class="key">`</span><span class="desc">Set End Time to full audio duration</span></div>
+        <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (player time)</span></div>
+        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (player time)</span></div>
         <div class="cheat-row"><span class="key">Alt + M</span><span class="desc">Open Moveable Timing Manager</span></div>
         <div class="cheat-row"><span class="key">Space</span><span class="desc">Pause / Play Main Audio</span></div>
         <div class="cheat-row"><span class="key">1 - 9</span><span class="desc">Select Annotation 1..9</span></div>
-        <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (player time)</span></div>
-        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (Auto-next if Deadline Mode)</span></div>
         <div class="cheat-row"><span class="key">Shift + Enter</span><span class="desc">Save / Update Annotation</span></div>
         <div class="cheat-row"><span class="key">← / →</span><span class="desc">Seek ±5 seconds</span></div>
         <div class="cheat-row"><span class="key">↑ / ↓</span><span class="desc">Speed ±0.5x</span></div>

@@ -1,10 +1,11 @@
-// Background service worker for mySecondTeacher Annotation Helper (v1.4.0)
+// Background service worker for mySecondTeacher Annotation Helper (v1.5.0)
 
 const DEFAULT_SETTINGS = {
   enabled: true,
   shortcutSpace: true,
   shortcutNumbers: true,
   shortcutBrackets: true,
+  shortcutAudioEnd: true,
   shortcutSave: true,
   shortcutSeek: true,
   shortcutSpeed: true,

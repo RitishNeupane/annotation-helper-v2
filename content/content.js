@@ -1,4 +1,4 @@
-// content.js - mySecondTeacher Annotation Helper Content Script (v1.4.0)
+// content.js - mySecondTeacher Annotation Helper Content Script (v1.5.0)
 
 (function () {
   'use strict';
@@ -9,6 +9,7 @@
     shortcutSpace: true,
     shortcutNumbers: true,
     shortcutBrackets: true,
+    shortcutAudioEnd: true,
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
@@ -144,6 +145,41 @@
       return mainAudios[0];
     }
     return allAudios[0];
+  }
+
+  // --- Get Main Audio Total Duration / End Time Helper ---
+  function getMainAudioDuration(mainAudio) {
+    if (mainAudio && !isNaN(mainAudio.duration) && isFinite(mainAudio.duration) && mainAudio.duration > 0) {
+      return mainAudio.duration;
+    }
+
+    // Fallback 1: Check aria-valuemax on main slider thumb
+    const sliderThumb = document.querySelector('.MuiSlider-thumb[aria-valuemax]');
+    if (sliderThumb) {
+      const maxVal = parseFloat(sliderThumb.getAttribute('aria-valuemax'));
+      if (!isNaN(maxVal) && maxVal > 0) return maxVal;
+    }
+
+    // Fallback 2: Check input max on range slider
+    const rangeInput = document.querySelector('input[name="startTime"][max], input[name="endTime"][max]');
+    if (rangeInput) {
+      const maxVal = parseFloat(rangeInput.getAttribute('max'));
+      if (!isNaN(maxVal) && maxVal > 0) return maxVal;
+    }
+
+    // Fallback 3: Parse total duration text format "04:51:936"
+    const pElements = Array.from(document.querySelectorAll('p.MuiTypography-root'));
+    for (let p of pElements) {
+      const match = p.textContent.trim().match(/^(\d+):(\d+):(\d+)$/);
+      if (match) {
+        const mins = parseInt(match[1], 10);
+        const secs = parseInt(match[2], 10);
+        const ms = parseInt(match[3], 10);
+        return mins * 60 + secs + (ms / 1000);
+      }
+    }
+
+    return 0;
   }
 
   // --- Synthetic Event Trigger Helper ---
@@ -428,7 +464,7 @@
     let initialLeft = 0, initialTop = 0;
 
     dragHeader.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button')) return; // Don't drag if clicking close or action buttons
+      if (e.target.closest('button')) return;
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -437,7 +473,7 @@
       initialLeft = rect.left;
       initialTop = rect.top;
 
-      windowCard.style.right = 'auto'; // Switch from right anchoring to absolute left/top
+      windowCard.style.right = 'auto';
       windowCard.style.left = `${initialLeft}px`;
       windowCard.style.top = `${initialTop}px`;
       windowCard.classList.add('mst-window-dragging');
@@ -610,7 +646,7 @@
     attachRowEvents();
   }
 
-  // Row move operation: Splice and Shift (Drag item to new slot, shifting all others down)
+  // Row move operation: Splice and Shift
   function moveTimingItem(fromIndex, toIndex) {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= reorderedTimings.length || toIndex >= reorderedTimings.length) {
       return;
@@ -785,7 +821,7 @@
     content += `[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]\n`;
     content += `=================================================================\n`;
     content += JSON.stringify({
-      version: "1.4.0",
+      version: "1.5.0",
       pageUrl: pageUrl,
       timings: reorderedTimings
     }, null, 2);
@@ -808,7 +844,6 @@
     try {
       let importedList = null;
 
-      // Try parsing embedded JSON block first
       if (text.includes('[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]')) {
         const parts = text.split('[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]');
         if (parts.length > 1) {
@@ -820,7 +855,6 @@
         }
       }
 
-      // Try raw JSON parse if file was pure JSON
       if (!importedList) {
         try {
           const data = JSON.parse(text);
@@ -829,7 +863,6 @@
         } catch (e) {}
       }
 
-      // Fallback: Parse line-by-line formatted text
       if (!importedList) {
         importedList = [];
         const lines = text.split('\n');
@@ -1010,7 +1043,7 @@
       return;
     }
 
-    // 4: Square Bracket [ (Set Start Time)
+    // 4: Square Bracket [ (Set Start Time to Current Audio Time)
     if (e.key === '[' || e.code === 'BracketLeft') {
       if (!settings.shortcutBrackets) return;
       e.preventDefault();
@@ -1081,19 +1114,15 @@
 
       // --- DEADLINE MODE RAPID ANNOTATION FLOW ---
       if (settings.deadlineMode) {
-        // 1. Auto-save the current annotation
         saveOrUpdateAnnotation(selectedCard, selectedIndex);
 
-        // 2. Check if next annotation exists
         const nextIndex = selectedIndex + 1;
         if (nextIndex <= cards.length) {
           const delay = Math.max(0, parseFloat(settings.deadlineDelay) || 0.0);
           const nextStartTime = Number((curTime + delay).toFixed(settings.precision || 3));
 
-          // 3. Move selection to next annotation
           selectAnnotationCard(nextIndex);
 
-          // 4. Set start time on the next annotation card
           const nextCard = cards[nextIndex - 1];
           if (nextCard) {
             const nextStartInput = nextCard.querySelector('input[name="startTime"]');
@@ -1107,13 +1136,49 @@
           showToast('🏁', `[Deadline] Final Annotation #${selectedIndex} Saved!`);
         }
       } else {
-        // Standard non-deadline mode behavior
         showToast('⏱️', `Annotation #${selectedIndex} End Time:`, formatTimeDisplay(curTime));
       }
       return;
     }
 
-    // 6: Side Arrow Keys (Left / Right) to seek 5 seconds
+    // 6: Backtick Key ` (Set End Time of Selected Annotation to FULL Main Audio Duration)
+    if (e.key === '`' || e.code === 'Backquote') {
+      if (!settings.shortcutAudioEnd) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const totalDuration = getMainAudioDuration(mainAudio);
+      if (totalDuration <= 0) {
+        showToast('⚠️', 'Audio total duration not available');
+        return;
+      }
+
+      const cards = getAnnotationCards();
+      if (cards.length === 0) {
+        showToast('⚠️', 'No annotations to set time');
+        return;
+      }
+
+      if (selectedIndex < 1 || selectedIndex > cards.length) {
+        selectedIndex = 1;
+      }
+
+      const selectedCard = cards[selectedIndex - 1];
+      const endInput = selectedCard.querySelector('input[name="endTime"]');
+      if (!endInput) {
+        showToast('⚠️', `End Time input missing for #${selectedIndex}`);
+        return;
+      }
+
+      const formattedDuration = Number(totalDuration.toFixed(settings.precision || 3));
+      setNativeInputValue(endInput, formattedDuration);
+      blurActiveElement();
+
+      showToast('🏁', `Annotation #${selectedIndex} End Time (Full Audio):`, formatTimeDisplay(totalDuration));
+      return;
+    }
+
+    // 7: Side Arrow Keys (Left / Right) to seek 5 seconds
     if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
       if (!settings.shortcutSeek) return;
       e.preventDefault();
@@ -1132,14 +1197,14 @@
       e.stopPropagation();
 
       if (!mainAudio) return;
-      const maxTime = mainAudio.duration || Infinity;
+      const maxTime = getMainAudioDuration(mainAudio) || Infinity;
       const newTime = Math.min(maxTime, mainAudio.currentTime + (settings.seekStep || 5));
       mainAudio.currentTime = newTime;
       showToast('⏩', `Seek +${settings.seekStep || 5}s`, formatTimeDisplay(newTime));
       return;
     }
 
-    // 7: Up and Down Arrow Keys to speed up or slow down playback rate
+    // 8: Up and Down Arrow Keys to speed up or slow down playback rate
     if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
       if (!settings.shortcutSpeed) return;
       e.preventDefault();

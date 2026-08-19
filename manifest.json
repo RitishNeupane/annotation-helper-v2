@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "mySecondTeacher Annotation Helper",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Custom keyboard shortcuts, Deadline Mode, and Timing Manager for audio annotations on mySecondTeacher Publishing.",
   "icons": {
     "16": "assets/icon16.png",
