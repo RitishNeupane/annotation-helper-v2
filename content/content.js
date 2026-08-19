@@ -1,4 +1,4 @@
-// content.js - mySecondTeacher Annotation Helper Content Script (v1.3.0)
+// content.js - mySecondTeacher Annotation Helper Content Script (v1.4.0)
 
 (function () {
   'use strict';
@@ -13,6 +13,8 @@
     shortcutSeek: true,
     shortcutSpeed: true,
     showFloatingButton: true,
+    deadlineMode: false,
+    deadlineDelay: 0.0,
     seekStep: 5,
     speedStep: 0.5,
     autoUpdate: false,
@@ -340,7 +342,7 @@
   }
 
   // =========================================================================
-  // --- ANNOTATION TIMING MANAGER & MOVER UI MODULE ---
+  // --- ANNOTATION TIMING MANAGER & MOVEABLE WINDOW MODULE ---
   // =========================================================================
 
   // Scan live annotation cards from the DOM
@@ -378,7 +380,7 @@
     btn.id = 'mst-floating-launcher';
     btn.className = 'mst-floating-btn';
     btn.innerHTML = `<span>⏱️</span><span>Manage Timings</span>`;
-    btn.title = 'Open Annotation Timing Manager (Alt+M)';
+    btn.title = 'Open Moveable Timing Manager (Alt+M)';
     btn.addEventListener('click', () => {
       openTimingManagerModal();
     });
@@ -394,7 +396,7 @@
     }
   }
 
-  // Open & Render Timing Manager Modal Dialog
+  // Open & Render Moveable Timing Manager Modal Dialog (No Backdrop Blur)
   function openTimingManagerModal() {
     scanPageAnnotations();
 
@@ -410,7 +412,7 @@
     }
 
     renderModalContent();
-    timingModalContainer.style.display = 'flex';
+    timingModalContainer.style.display = 'block';
   }
 
   function closeTimingManagerModal() {
@@ -419,83 +421,133 @@
     }
   }
 
+  // Make the window smoothly draggable by its header
+  function makeElementDraggable(windowCard, dragHeader) {
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
+
+    dragHeader.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button')) return; // Don't drag if clicking close or action buttons
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      const rect = windowCard.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      windowCard.style.right = 'auto'; // Switch from right anchoring to absolute left/top
+      windowCard.style.left = `${initialLeft}px`;
+      windowCard.style.top = `${initialTop}px`;
+      windowCard.classList.add('mst-window-dragging');
+
+      function onMouseMove(moveEvent) {
+        if (!isDragging) return;
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+
+        const maxLeft = window.innerWidth - windowCard.offsetWidth - 10;
+        const maxTop = window.innerHeight - windowCard.offsetHeight - 10;
+
+        windowCard.style.left = `${Math.max(10, Math.min(maxLeft, initialLeft + dx))}px`;
+        windowCard.style.top = `${Math.max(10, Math.min(maxTop, initialTop + dy))}px`;
+      }
+
+      function onMouseUp() {
+        if (!isDragging) return;
+        isDragging = false;
+        windowCard.classList.remove('mst-window-dragging');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
   // Render modal dialog UI
   function renderModalContent() {
     if (!timingModalContainer) return;
 
     timingModalContainer.innerHTML = `
-      <div class="mst-modal-overlay">
-        <div class="mst-modal-card">
-          
-          <!-- Header -->
-          <div class="mst-modal-header">
-            <div class="mst-modal-title-group">
-              <span class="mst-modal-icon">⏱️</span>
-              <div>
-                <h3 class="mst-modal-title">Audio Annotation Timing Manager</h3>
-                <p class="mst-modal-subtitle">Reorder timestamps to fix visual sequence errors, backup, or batch-apply to page</p>
-              </div>
-            </div>
-            <button class="mst-modal-close-btn" id="mstModalCloseBtn" title="Close (Esc)">&times;</button>
-          </div>
-
-          <!-- Toolbar -->
-          <div class="mst-modal-toolbar">
-            <div class="mst-toolbar-left">
-              <button class="mst-tool-btn" id="mstBtnScan" title="Re-scan annotations currently on the page">
-                <span>🔄</span> Scan Page
-              </button>
-              <button class="mst-tool-btn" id="mstBtnReset" title="Reset order to original scanned page order">
-                <span>↩️</span> Reset Order
-              </button>
-            </div>
-            <div class="mst-toolbar-right">
-              <button class="mst-tool-btn" id="mstBtnExport" title="Export timings as readable text / backup file">
-                <span>💾</span> Export Timings (.txt)
-              </button>
-              <button class="mst-tool-btn" id="mstBtnImport" title="Import timings from a previously saved file">
-                <span>📂</span> Load Timings (.txt)
-              </button>
-              <input type="file" id="mstFileInput" accept=".txt,.json" style="display: none;">
+      <div class="mst-modal-card" id="mstDraggableCard">
+        
+        <!-- Header (Draggable Handle) -->
+        <div class="mst-modal-header" id="mstModalHeader" title="Click and drag to move window">
+          <div class="mst-modal-title-group">
+            <span class="mst-modal-icon">⏱️</span>
+            <div>
+              <h3 class="mst-modal-title">Annotation Timing Manager</h3>
+              <p class="mst-modal-subtitle">Drag header to move window anywhere on screen</p>
             </div>
           </div>
-
-          <!-- Table Container -->
-          <div class="mst-table-container">
-            <table class="mst-timing-table">
-              <thead>
-                <tr>
-                  <th style="width: 100px;">Slot (Page)</th>
-                  <th style="width: 90px; text-align: center;">Reorder</th>
-                  <th>Source Timing</th>
-                  <th style="width: 130px;">Start Time (s)</th>
-                  <th style="width: 130px;">End Time (s)</th>
-                  <th style="width: 110px;">Duration</th>
-                  <th style="width: 120px;">Status</th>
-                </tr>
-              </thead>
-              <tbody id="mstTimingTableBody">
-                <!-- Rows injected dynamically -->
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Footer Actions -->
-          <div class="mst-modal-footer">
-            <div class="mst-footer-info" id="mstFooterStatus">
-              ${scannedTimings.length} annotations loaded. Drag rows or use ▲/▼ to arrange timings.
-            </div>
-            <div class="mst-footer-buttons">
-              <button class="mst-btn mst-btn-secondary" id="mstBtnCancel">Cancel</button>
-              <button class="mst-btn mst-btn-primary" id="mstBtnApply">
-                <span>🚀</span> Apply Changes to Page
-              </button>
-            </div>
-          </div>
-
+          <button class="mst-modal-close-btn" id="mstModalCloseBtn" title="Close (Esc)">&times;</button>
         </div>
+
+        <!-- Toolbar -->
+        <div class="mst-modal-toolbar">
+          <div class="mst-toolbar-left">
+            <button class="mst-tool-btn" id="mstBtnScan" title="Re-scan annotations currently on the page">
+              <span>🔄</span> Scan Page
+            </button>
+            <button class="mst-tool-btn" id="mstBtnReset" title="Reset order to original scanned page order">
+              <span>↩️</span> Reset Order
+            </button>
+          </div>
+          <div class="mst-toolbar-right">
+            <button class="mst-tool-btn" id="mstBtnExport" title="Export timings as readable text / backup file">
+              <span>💾</span> Export Timings (.txt)
+            </button>
+            <button class="mst-tool-btn" id="mstBtnImport" title="Import timings from a previously saved file">
+              <span>📂</span> Load Timings (.txt)
+            </button>
+            <input type="file" id="mstFileInput" accept=".txt,.json" style="display: none;">
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="mst-table-container">
+          <table class="mst-timing-table">
+            <thead>
+              <tr>
+                <th style="width: 90px;">Slot</th>
+                <th style="width: 80px; text-align: center;">Reorder</th>
+                <th>Source Timing</th>
+                <th style="width: 120px;">Start Time (s)</th>
+                <th style="width: 120px;">End Time (s)</th>
+                <th style="width: 90px;">Duration</th>
+                <th style="width: 110px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="mstTimingTableBody">
+              <!-- Rows injected dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="mst-modal-footer">
+          <div class="mst-footer-info" id="mstFooterStatus">
+            ${scannedTimings.length} annotations loaded. Drag rows or use ▲/▼ to arrange timings.
+          </div>
+          <div class="mst-footer-buttons">
+            <button class="mst-btn mst-btn-secondary" id="mstBtnCancel">Cancel</button>
+            <button class="mst-btn mst-btn-primary" id="mstBtnApply">
+              <span>🚀</span> Apply Changes to Page
+            </button>
+          </div>
+        </div>
+
       </div>
     `;
+
+    const card = document.getElementById('mstDraggableCard');
+    const header = document.getElementById('mstModalHeader');
+    if (card && header) {
+      makeElementDraggable(card, header);
+    }
 
     renderTableRows();
     attachModalEvents();
@@ -564,7 +616,6 @@
       return;
     }
 
-    // Splice item out and insert at toIndex (Shift down / up)
     const [movedItem] = reorderedTimings.splice(fromIndex, 1);
     reorderedTimings.splice(toIndex, 0, movedItem);
 
@@ -734,7 +785,7 @@
     content += `[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]\n`;
     content += `=================================================================\n`;
     content += JSON.stringify({
-      version: "1.3.0",
+      version: "1.4.0",
       pageUrl: pageUrl,
       timings: reorderedTimings
     }, null, 2);
@@ -783,7 +834,6 @@
         importedList = [];
         const lines = text.split('\n');
         lines.forEach(line => {
-          // Look for: Slot #1 | From #... | mm:ss.ms (XX.XXs) | mm:ss.ms (YY.YYs)
           const match = line.match(/Slot\s*#(\d+).*?\(([\d.]+)s\).*?\(([\d.]+)s\)/);
           if (match) {
             importedList.push({
@@ -850,10 +900,8 @@
         setNativeInputValue(endInput, timing.endTime);
       }
 
-      // Safe pause between updates so React and network requests process cleanly
       await new Promise(resolve => setTimeout(resolve, 150));
 
-      // Trigger Save / Update button on this card
       const buttons = Array.from(card.querySelectorAll('button'));
       let saveOrUpdateBtn = buttons.find(b => {
         const text = b.textContent.trim().toLowerCase();
@@ -872,7 +920,6 @@
         triggerClick(saveOrUpdateBtn);
       }
 
-      // Another brief pause for backend database save
       await new Promise(resolve => setTimeout(resolve, 150));
     }
 
@@ -881,7 +928,6 @@
     }
     if (applyBtn) applyBtn.disabled = false;
 
-    // Rescan fresh values from page
     scanPageAnnotations();
     renderTableRows();
 
@@ -964,7 +1010,7 @@
       return;
     }
 
-    // 4: Square Brackets [ and ] to set start and end times
+    // 4: Square Bracket [ (Set Start Time)
     if (e.key === '[' || e.code === 'BracketLeft') {
       if (!settings.shortcutBrackets) return;
       e.preventDefault();
@@ -1000,6 +1046,7 @@
       return;
     }
 
+    // 5: Square Bracket ] (Set End Time + Optional Deadline Mode Fast Flow)
     if (e.key === ']' || e.code === 'BracketRight') {
       if (!settings.shortcutBrackets) return;
       e.preventDefault();
@@ -1031,11 +1078,42 @@
       const formattedValue = Number(curTime.toFixed(settings.precision || 3));
       setNativeInputValue(endInput, formattedValue);
       blurActiveElement();
-      showToast('⏱️', `Annotation #${selectedIndex} End Time:`, formatTimeDisplay(curTime));
+
+      // --- DEADLINE MODE RAPID ANNOTATION FLOW ---
+      if (settings.deadlineMode) {
+        // 1. Auto-save the current annotation
+        saveOrUpdateAnnotation(selectedCard, selectedIndex);
+
+        // 2. Check if next annotation exists
+        const nextIndex = selectedIndex + 1;
+        if (nextIndex <= cards.length) {
+          const delay = Math.max(0, parseFloat(settings.deadlineDelay) || 0.0);
+          const nextStartTime = Number((curTime + delay).toFixed(settings.precision || 3));
+
+          // 3. Move selection to next annotation
+          selectAnnotationCard(nextIndex);
+
+          // 4. Set start time on the next annotation card
+          const nextCard = cards[nextIndex - 1];
+          if (nextCard) {
+            const nextStartInput = nextCard.querySelector('input[name="startTime"]');
+            if (nextStartInput) {
+              setNativeInputValue(nextStartInput, nextStartTime);
+            }
+          }
+
+          showToast('⚡', `[Deadline] #${selectedIndex - 1} Saved ➔ #${selectedIndex} Start:`, formatTimeDisplay(nextStartTime));
+        } else {
+          showToast('🏁', `[Deadline] Final Annotation #${selectedIndex} Saved!`);
+        }
+      } else {
+        // Standard non-deadline mode behavior
+        showToast('⏱️', `Annotation #${selectedIndex} End Time:`, formatTimeDisplay(curTime));
+      }
       return;
     }
 
-    // 5: Side Arrow Keys (Left / Right) to seek 5 seconds
+    // 6: Side Arrow Keys (Left / Right) to seek 5 seconds
     if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
       if (!settings.shortcutSeek) return;
       e.preventDefault();
@@ -1061,7 +1139,7 @@
       return;
     }
 
-    // 6: Up and Down Arrow Keys to speed up or slow down playback rate
+    // 7: Up and Down Arrow Keys to speed up or slow down playback rate
     if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
       if (!settings.shortcutSpeed) return;
       e.preventDefault();

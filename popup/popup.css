@@ -1,4 +1,4 @@
-/* Modern Dark Theme CSS for mySecondTeacher Annotation Helper Popup (v1.3.0) */
+/* Modern Dark Theme CSS for mySecondTeacher Annotation Helper Popup (v1.4.0) */
 
 :root {
   --bg-primary: #0f172a;
@@ -6,6 +6,8 @@
   --bg-card-hover: #334155;
   --accent-primary: #6366f1;
   --accent-hover: #4f46e5;
+  --accent-amber: #f59e0b;
+  --accent-amber-hover: #d97706;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --border-color: rgba(255, 255, 255, 0.08);
@@ -158,6 +160,72 @@ body {
 .master-card {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(30, 41, 59, 1));
   border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* Deadline Mode Card */
+.deadline-card {
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(30, 41, 59, 1));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 12px 14px;
+}
+
+.deadline-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.deadline-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.deadline-icon {
+  font-size: 18px;
+}
+
+.text-amber {
+  color: #fcd34d !important;
+}
+
+.slider-amber:before {
+  background-color: #ffffff !important;
+}
+
+input:checked + .slider-amber {
+  background-color: var(--accent-amber) !important;
+}
+
+.deadline-delay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(245, 158, 11, 0.25);
+  font-size: 11px;
+}
+
+.deadline-delay-label {
+  color: #fde68a;
+  font-weight: 600;
+}
+
+.deadline-input {
+  width: 75px !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+  color: #fef3c7 !important;
+  text-align: center;
+}
+
+.deadline-input:focus {
+  border-color: var(--accent-amber) !important;
 }
 
 .item-card {

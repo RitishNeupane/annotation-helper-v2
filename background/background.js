@@ -1,4 +1,4 @@
-// Background service worker for mySecondTeacher Annotation Helper (v1.3.0)
+// Background service worker for mySecondTeacher Annotation Helper (v1.4.0)
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -9,6 +9,8 @@ const DEFAULT_SETTINGS = {
   shortcutSeek: true,
   shortcutSpeed: true,
   showFloatingButton: true,
+  deadlineMode: false,
+  deadlineDelay: 0.0,
   seekStep: 5,
   speedStep: 0.5,
   autoUpdate: false,

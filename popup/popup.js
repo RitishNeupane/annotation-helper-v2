@@ -1,4 +1,4 @@
-// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.3.0)
+// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.4.0)
 
 document.addEventListener('DOMContentLoaded', () => {
   const masterToggle = document.getElementById('masterToggle');
@@ -9,6 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggleSeek = document.getElementById('toggleSeek');
   const toggleSpeed = document.getElementById('toggleSpeed');
   
+  const toggleDeadlineMode = document.getElementById('toggleDeadlineMode');
+  const deadlineDelayInput = document.getElementById('deadlineDelayInput');
+
   const seekStepInput = document.getElementById('seekStepInput');
   const speedStepInput = document.getElementById('speedStepInput');
   const toggleFloatingButton = document.getElementById('toggleFloatingButton');
@@ -27,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcutSeek: true,
     shortcutSpeed: true,
     showFloatingButton: true,
+    deadlineMode: false,
+    deadlineDelay: 0.0,
     seekStep: 5,
     speedStep: 0.5,
     autoUpdate: false,
@@ -67,6 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSeek.checked = stored.shortcutSeek;
     toggleSpeed.checked = stored.shortcutSpeed;
 
+    toggleDeadlineMode.checked = stored.deadlineMode === true;
+    deadlineDelayInput.value = stored.deadlineDelay !== undefined ? stored.deadlineDelay : 0.0;
+
     seekStepInput.value = stored.seekStep || 5;
     speedStepInput.value = stored.speedStep || 0.5;
     toggleFloatingButton.checked = stored.showFloatingButton !== false;
@@ -83,6 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
       shortcutSave: toggleSave.checked,
       shortcutSeek: toggleSeek.checked,
       shortcutSpeed: toggleSpeed.checked,
+      deadlineMode: toggleDeadlineMode.checked,
+      deadlineDelay: Math.max(0, parseFloat(deadlineDelayInput.value) || 0.0),
       seekStep: Math.max(1, parseInt(seekStepInput.value, 10) || 5),
       speedStep: Math.max(0.1, parseFloat(speedStepInput.value) || 0.5),
       showFloatingButton: toggleFloatingButton.checked,
@@ -101,6 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSave,
     toggleSeek,
     toggleSpeed,
+    toggleDeadlineMode,
+    deadlineDelayInput,
     seekStepInput,
     speedStepInput,
     toggleFloatingButton,

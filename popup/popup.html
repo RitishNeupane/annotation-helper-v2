@@ -14,7 +14,7 @@
         <img src="../assets/icon48.png" alt="Logo" class="brand-logo">
         <div class="brand-text">
           <h1>MST Annotation Helper</h1>
-          <span class="version">v1.3.0</span>
+          <span class="version">v1.4.0</span>
         </div>
       </div>
       <div class="status-badge active" id="statusBadge">
@@ -25,7 +25,7 @@
 
     <!-- Timing Manager Featured Action Button -->
     <button class="timing-manager-btn" id="btnOpenTimingManager" title="Open Annotation Timing Manager to reorder timestamps">
-      <span class="btn-icon">⚡</span>
+      <span class="btn-icon">⏱️</span>
       <div class="btn-text-block">
         <span class="btn-main-text">Save & Manage Timing</span>
         <span class="btn-sub-text">Reorder, export & batch-apply timestamps</span>
@@ -44,6 +44,29 @@
         <span class="slider round"></span>
       </label>
     </div>
+
+    <!-- Deadline Mode (Rapid Annotation Feature) -->
+    <section class="section">
+      <div class="card deadline-card">
+        <div class="deadline-header-row">
+          <div class="deadline-title-group">
+            <span class="deadline-icon">⚡</span>
+            <div>
+              <span class="card-title text-amber">Deadline Mode (Rapid Flow)</span>
+              <span class="card-desc">Pressing <span class="key-badge">]</span> saves current & auto-starts next</span>
+            </div>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="toggleDeadlineMode">
+            <span class="slider round slider-amber"></span>
+          </label>
+        </div>
+        <div class="deadline-delay-row" id="deadlineDelayRow">
+          <label for="deadlineDelayInput" class="deadline-delay-label">Delay for next annotation (sec):</label>
+          <input type="number" id="deadlineDelayInput" min="0" max="10" step="0.05" value="0.00" class="num-input deadline-input">
+        </div>
+      </div>
+    </section>
 
     <!-- Main Features Section -->
     <section class="section">
@@ -154,7 +177,7 @@
         <div class="card item-card">
           <div class="card-info">
             <span class="card-title">On-Screen HUD Toasts</span>
-            <span class="card-desc">Display visual action badges in top-right</span>
+            <span class="card-desc">Display visual action badges in bottom-right</span>
           </div>
           <label class="toggle-switch small">
             <input type="checkbox" id="toggleToast" checked>
@@ -168,11 +191,11 @@
     <section class="section">
       <h2 class="section-title">Shortcut Guide</h2>
       <div class="cheat-sheet">
-        <div class="cheat-row"><span class="key">Alt + M</span><span class="desc">Open Timing Manager</span></div>
+        <div class="cheat-row"><span class="key">Alt + M</span><span class="desc">Open Moveable Timing Manager</span></div>
         <div class="cheat-row"><span class="key">Space</span><span class="desc">Pause / Play Main Audio</span></div>
         <div class="cheat-row"><span class="key">1 - 9</span><span class="desc">Select Annotation 1..9</span></div>
         <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (player time)</span></div>
-        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (player time)</span></div>
+        <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (Auto-next if Deadline Mode)</span></div>
         <div class="cheat-row"><span class="key">Shift + Enter</span><span class="desc">Save / Update Annotation</span></div>
         <div class="cheat-row"><span class="key">← / →</span><span class="desc">Seek ±5 seconds</span></div>
         <div class="cheat-row"><span class="key">↑ / ↓</span><span class="desc">Speed ±0.5x</span></div>

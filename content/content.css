@@ -1,4 +1,4 @@
-/* CSS Styles for mySecondTeacher Annotation Helper Content Script (v1.3.0) */
+/* CSS Styles for mySecondTeacher Annotation Helper Content Script (v1.4.0) */
 
 /* --- Selected Annotation Card Highlight --- */
 .mst-annotation-card-selected {
@@ -50,7 +50,7 @@
 
 /* HUD Toast Item */
 .mst-hud-toast {
-  background: rgba(18, 22, 36, 0.94);
+  background: rgba(18, 22, 36, 0.96);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-left: 4px solid #3f51b5;
@@ -128,7 +128,7 @@
   transform: translateY(0);
 }
 
-/* --- Timing Manager Modal Overlay (No Heavy Obstructive Blur) --- */
+/* --- Moveable Timing Manager Window (NO BACKDROP BLUR / NO PAGE OBSTRUCTION) --- */
 #mst-timing-modal-root {
   position: fixed;
   top: 0;
@@ -137,35 +137,23 @@
   height: 100vh;
   z-index: 999999;
   display: none;
-  align-items: center;
-  justify-content: center;
+  pointer-events: none; /* Allows interacting with the page behind it! */
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-.mst-modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(10, 15, 29, 0.65); /* Clean subtle darkening without obstructing blur */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  box-sizing: border-box;
-}
-
 .mst-modal-card {
-  position: relative;
+  position: fixed;
+  top: 50px;
+  right: 40px;
+  pointer-events: auto; /* Only window itself intercepts mouse events */
   background: #111827;
   color: #f3f4f6;
-  width: 100%;
-  max-width: 880px;
-  max-height: 90vh;
+  width: 820px;
+  max-width: calc(100vw - 60px);
+  max-height: calc(100vh - 80px);
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.3);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -177,29 +165,42 @@
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Modal Header */
+.mst-modal-card.mst-window-dragging {
+  opacity: 0.92;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 0 2px #6366f1;
+  transition: none !important;
+}
+
+/* Draggable Modal Header */
 .mst-modal-header {
-  padding: 16px 20px;
+  padding: 14px 18px;
   background: #1f2937;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  cursor: grab;
+  user-select: none;
+}
+
+.mst-modal-header:active {
+  cursor: grabbing;
 }
 
 .mst-modal-title-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  pointer-events: none;
 }
 
 .mst-modal-icon {
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .mst-modal-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #ffffff;
   line-height: 1.2;
@@ -207,7 +208,7 @@
 
 .mst-modal-subtitle {
   margin: 2px 0 0 0;
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
 }
 
@@ -215,35 +216,36 @@
   background: transparent;
   border: none;
   color: #9ca3af;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
   transition: all 0.15s ease;
+  pointer-events: auto;
 }
 
 .mst-modal-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
 }
 
 /* Modal Toolbar */
 .mst-modal-toolbar {
-  padding: 10px 20px;
+  padding: 8px 18px;
   background: #182234;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .mst-toolbar-left, .mst-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .mst-tool-btn {
@@ -251,13 +253,13 @@
   color: #e5e7eb;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 5px 10px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   transition: all 0.15s ease;
 }
 
@@ -269,21 +271,21 @@
 
 /* Table Container */
 .mst-table-container {
-  padding: 12px 20px;
+  padding: 10px 18px;
   overflow-y: auto;
   flex: 1;
-  max-height: 52vh;
+  max-height: 48vh;
 }
 
 .mst-timing-table {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 0 6px;
-  font-size: 13px;
+  border-spacing: 0 5px;
+  font-size: 12px;
 }
 
 .mst-timing-table th {
-  padding: 8px 10px;
+  padding: 6px 8px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -295,24 +297,24 @@
 
 .mst-timing-row {
   background: #1f2937;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
   user-select: none;
 }
 
 .mst-timing-row td {
-  padding: 10px;
+  padding: 8px 10px;
   vertical-align: middle;
 }
 
 .mst-timing-row td:first-child {
-  border-top-left-radius: 8px;
-  border-bottom-left-radius: 8px;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
 }
 
 .mst-timing-row td:last-child {
-  border-top-right-radius: 8px;
-  border-bottom-right-radius: 8px;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 
 .mst-timing-row:hover {
@@ -340,16 +342,16 @@
   font-weight: 700;
   color: #ffffff;
   background: #374151;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
   display: inline-block;
 }
 
 .mst-mover-controls {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .mst-move-btn {
@@ -357,12 +359,12 @@
   color: #d1d5db;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 9px;
   cursor: pointer;
   transition: all 0.1s ease;
 }
@@ -381,8 +383,8 @@
 .mst-drag-handle {
   cursor: grab;
   color: #6b7280;
-  font-size: 14px;
-  padding: 0 4px;
+  font-size: 13px;
+  padding: 0 3px;
   font-weight: bold;
 }
 
@@ -391,9 +393,9 @@
 }
 
 .mst-source-tag {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
   display: inline-block;
 }
@@ -415,10 +417,10 @@
   color: #f9fafb;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: 3px 5px;
+  font-size: 11px;
   font-weight: 600;
-  width: 80px;
+  width: 75px;
 }
 
 .mst-time-input:focus {
@@ -436,19 +438,19 @@
 }
 
 .mst-duration-badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: #93c5fd;
   background: rgba(59, 130, 246, 0.15);
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 4px;
 }
 
 .mst-status-pill {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
   display: inline-block;
 }
 
@@ -465,17 +467,17 @@
 
 /* Modal Footer */
 .mst-modal-footer {
-  padding: 14px 20px;
+  padding: 12px 18px;
   background: #1f2937;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .mst-footer-info {
-  font-size: 12px;
+  font-size: 11px;
   color: #d1d5db;
   flex: 1;
 }
@@ -483,19 +485,19 @@
 .mst-footer-buttons {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mst-btn {
-  padding: 8px 16px;
+  padding: 7px 14px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   border: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   transition: all 0.15s ease;
 }
 
