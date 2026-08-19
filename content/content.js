@@ -1,4 +1,4 @@
-// content.js - mySecondTeacher Annotation Helper Content Script (v1.5.0)
+// content.js - mySecondTeacher Annotation Helper Content Script (v1.5.1)
 
 (function () {
   'use strict';
@@ -115,7 +115,8 @@
     const el = e.target || document.activeElement;
     if (!el) return false;
     const tag = el.tagName ? el.tagName.toUpperCase() : '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+    // If typing in a text field that is NOT start/end time (e.g. Section Title)
+    if (tag === 'TEXTAREA' || (tag === 'INPUT' && el.type === 'text')) {
       return true;
     }
     if (el.isContentEditable) {
@@ -270,6 +271,27 @@
     return cards.filter(Boolean);
   }
 
+  // --- Extract Start Time and End Time Inputs from a Card ---
+  function getCardInputs(card) {
+    if (!card) return { startInput: null, endInput: null };
+
+    let startInput = card.querySelector('input[name="startTime"]') ||
+                     card.querySelector('input[name*="start" i]');
+    let endInput = card.querySelector('input[name="endTime"]') ||
+                   card.querySelector('input[name*="end" i]');
+
+    // Fallback by input order
+    if (!startInput || !endInput) {
+      const numInputs = Array.from(card.querySelectorAll('input[type="number"], input:not([type="hidden"]):not([type="checkbox"])'));
+      if (numInputs.length >= 2) {
+        if (!startInput) startInput = numInputs[0];
+        if (!endInput) endInput = numInputs[1];
+      }
+    }
+
+    return { startInput, endInput };
+  }
+
   // --- Card Selection & Highlight ---
   function updateSelectionHighlight() {
     const cards = getAnnotationCards();
@@ -351,18 +373,30 @@
     }
   }
 
-  // --- Dispatch React Native Input Event ---
+  // --- Dispatch React Native Input Event (Bypasses React 16/17/18 ValueTracker) ---
   function setNativeInputValue(input, val) {
     if (!input) return;
-    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (valueSetter) {
-      valueSetter.call(input, val);
-    } else {
-      input.value = val;
+    const stringVal = String(val);
+
+    // Reset React's internal value tracker if attached to input element
+    if (input._valueTracker) {
+      input._valueTracker.setValue('');
     }
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('blur', { bubbles: true }));
+
+    // Call native HTMLInputElement prototype setter
+    const prototype = Object.getPrototypeOf(input);
+    const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set ||
+                         Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+
+    if (nativeSetter) {
+      nativeSetter.call(input, stringVal);
+    } else {
+      input.value = stringVal;
+    }
+
+    // Dispatch synthetic React input, change, and blur events
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, composed: true, data: stringVal }));
+    input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true, composed: true }));
   }
 
   // --- Format Seconds to mm:ss.ms ---
@@ -388,8 +422,7 @@
 
     cards.forEach((card, idx) => {
       const num = idx + 1;
-      const startInput = card.querySelector('input[name="startTime"]');
-      const endInput = card.querySelector('input[name="endTime"]');
+      const { startInput, endInput } = getCardInputs(card);
 
       const startTime = startInput ? parseFloat(startInput.value) || 0 : 0;
       const endTime = endInput ? parseFloat(endInput.value) || 0 : 0;
@@ -821,7 +854,7 @@
     content += `[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]\n`;
     content += `=================================================================\n`;
     content += JSON.stringify({
-      version: "1.5.0",
+      version: "1.5.1",
       pageUrl: pageUrl,
       timings: reorderedTimings
     }, null, 2);
@@ -923,8 +956,7 @@
         footerStatus.innerHTML = `⏳ Updating Slot #${targetSlotNum} / ${totalToApply} (Start: ${timing.startTime}s, End: ${timing.endTime}s)...`;
       }
 
-      const startInput = card.querySelector('input[name="startTime"]');
-      const endInput = card.querySelector('input[name="endTime"]');
+      const { startInput, endInput } = getCardInputs(card);
 
       if (startInput) {
         setNativeInputValue(startInput, timing.startTime);
@@ -1027,7 +1059,7 @@
       return;
     }
 
-    // Bypass remaining shortcuts if user is actively typing in a non-annotation text field
+    // Bypass remaining shortcuts ONLY if user is actively typing in a non-annotation text field (e.g. Chapter Title)
     if (isInputActive(e)) return;
 
     const mainAudio = getMainAudioElement();
@@ -1065,7 +1097,7 @@
       }
 
       const selectedCard = cards[selectedIndex - 1];
-      const startInput = selectedCard.querySelector('input[name="startTime"]');
+      const { startInput } = getCardInputs(selectedCard);
       if (!startInput) {
         showToast('⚠️', `Start Time input missing for #${selectedIndex}`);
         return;
@@ -1101,7 +1133,7 @@
       }
 
       const selectedCard = cards[selectedIndex - 1];
-      const endInput = selectedCard.querySelector('input[name="endTime"]');
+      const { endInput } = getCardInputs(selectedCard);
       if (!endInput) {
         showToast('⚠️', `End Time input missing for #${selectedIndex}`);
         return;
@@ -1125,7 +1157,7 @@
 
           const nextCard = cards[nextIndex - 1];
           if (nextCard) {
-            const nextStartInput = nextCard.querySelector('input[name="startTime"]');
+            const { startInput: nextStartInput } = getCardInputs(nextCard);
             if (nextStartInput) {
               setNativeInputValue(nextStartInput, nextStartTime);
             }
@@ -1147,6 +1179,8 @@
       e.preventDefault();
       e.stopPropagation();
 
+      blurActiveElement();
+
       const totalDuration = getMainAudioDuration(mainAudio);
       if (totalDuration <= 0) {
         showToast('⚠️', 'Audio total duration not available');
@@ -1164,7 +1198,7 @@
       }
 
       const selectedCard = cards[selectedIndex - 1];
-      const endInput = selectedCard.querySelector('input[name="endTime"]');
+      const { endInput } = getCardInputs(selectedCard);
       if (!endInput) {
         showToast('⚠️', `End Time input missing for #${selectedIndex}`);
         return;
@@ -1173,6 +1207,11 @@
       const formattedDuration = Number(totalDuration.toFixed(settings.precision || 3));
       setNativeInputValue(endInput, formattedDuration);
       blurActiveElement();
+
+      // If Deadline Mode is active, auto-save as well
+      if (settings.deadlineMode) {
+        saveOrUpdateAnnotation(selectedCard, selectedIndex);
+      }
 
       showToast('🏁', `Annotation #${selectedIndex} End Time (Full Audio):`, formatTimeDisplay(totalDuration));
       return;
