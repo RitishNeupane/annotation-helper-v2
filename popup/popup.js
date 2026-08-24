@@ -1,4 +1,4 @@
-// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.5.0)
+// popup.js - mySecondTeacher Annotation Helper Popup Logic (v1.6.0)
 
 document.addEventListener('DOMContentLoaded', () => {
   const masterToggle = document.getElementById('masterToggle');
@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggleNumbers = document.getElementById('toggleNumbers');
   const toggleBrackets = document.getElementById('toggleBrackets');
   const toggleAudioEnd = document.getElementById('toggleAudioEnd');
+  const togglePageNav = document.getElementById('togglePageNav');
   const toggleSave = document.getElementById('toggleSave');
   const toggleSeek = document.getElementById('toggleSeek');
   const toggleSpeed = document.getElementById('toggleSpeed');
@@ -28,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcutNumbers: true,
     shortcutBrackets: true,
     shortcutAudioEnd: true,
+    shortcutPageNav: true,
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
@@ -71,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleNumbers.checked = stored.shortcutNumbers;
     toggleBrackets.checked = stored.shortcutBrackets;
     toggleAudioEnd.checked = stored.shortcutAudioEnd !== false;
+    togglePageNav.checked = stored.shortcutPageNav !== false;
     toggleSave.checked = stored.shortcutSave;
     toggleSeek.checked = stored.shortcutSeek;
     toggleSpeed.checked = stored.shortcutSpeed;
@@ -92,6 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
       shortcutNumbers: toggleNumbers.checked,
       shortcutBrackets: toggleBrackets.checked,
       shortcutAudioEnd: toggleAudioEnd.checked,
+      shortcutPageNav: togglePageNav.checked,
       shortcutSave: toggleSave.checked,
       shortcutSeek: toggleSeek.checked,
       shortcutSpeed: toggleSpeed.checked,
@@ -113,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleNumbers,
     toggleBrackets,
     toggleAudioEnd,
+    togglePageNav,
     toggleSave,
     toggleSeek,
     toggleSpeed,

@@ -1,4 +1,4 @@
-// content.js - mySecondTeacher Annotation Helper Content Script (v1.5.1)
+// content.js - mySecondTeacher Annotation Helper Content Script (v1.6.0)
 
 (function () {
   'use strict';
@@ -10,6 +10,7 @@
     shortcutNumbers: true,
     shortcutBrackets: true,
     shortcutAudioEnd: true,
+    shortcutPageNav: true,
     shortcutSave: true,
     shortcutSeek: true,
     shortcutSpeed: true,
@@ -192,6 +193,68 @@
     element.dispatchEvent(new MouseEvent('click', opts));
     if (typeof element.click === 'function') {
       element.click();
+    }
+  }
+
+  // --- Next Page Navigation Helper ---
+  function navigateToNextPage() {
+    const allSvgs = Array.from(document.querySelectorAll('svg'));
+    let nextBtn = null;
+
+    // Search for SVG path matching "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
+    for (let svg of allSvgs) {
+      const path = svg.querySelector('path');
+      if (!path) continue;
+      const d = path.getAttribute('d') || '';
+
+      if (d.includes('M10 6L8.59') || d.includes('13.17 12') || d.includes('6-6z')) {
+        nextBtn = svg.closest('button') || svg.closest('a') || svg.parentElement || svg;
+        break;
+      }
+    }
+
+    // Fallback for Next Page aria-label or class
+    if (!nextBtn) {
+      nextBtn = document.querySelector('button[aria-label*="next" i], button[title*="next" i], .MuiPaginationItem-next');
+    }
+
+    if (nextBtn) {
+      triggerClick(nextBtn);
+      blurActiveElement();
+      showToast('▶️', 'Navigating to Next Page');
+    } else {
+      showToast('⚠️', 'Next Page button not found');
+    }
+  }
+
+  // --- Previous Page Navigation Helper ---
+  function navigateToPreviousPage() {
+    const allSvgs = Array.from(document.querySelectorAll('svg'));
+    let prevBtn = null;
+
+    // Search for ChevronLeft SVG path matching "M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"
+    for (let svg of allSvgs) {
+      const path = svg.querySelector('path');
+      if (!path) continue;
+      const d = path.getAttribute('d') || '';
+
+      if (d.includes('M15.41 7.41') || d.includes('10.83 12') || d.includes('14 6l-6 6')) {
+        prevBtn = svg.closest('button') || svg.closest('a') || svg.parentElement || svg;
+        break;
+      }
+    }
+
+    // Fallback for Previous Page aria-label or class
+    if (!prevBtn) {
+      prevBtn = document.querySelector('button[aria-label*="previous" i], button[aria-label*="prev" i], button[title*="prev" i], .MuiPaginationItem-previous');
+    }
+
+    if (prevBtn) {
+      triggerClick(prevBtn);
+      blurActiveElement();
+      showToast('◀️', 'Navigating to Previous Page');
+    } else {
+      showToast('⚠️', 'Previous Page button not found');
     }
   }
 
@@ -854,7 +917,7 @@
     content += `[STRUCTURED JSON DATA FOR EASY IMPORT - DO NOT EDIT BELOW]\n`;
     content += `=================================================================\n`;
     content += JSON.stringify({
-      version: "1.5.1",
+      version: "1.6.0",
       pageUrl: pageUrl,
       timings: reorderedTimings
     }, null, 2);
@@ -1059,12 +1122,26 @@
       return;
     }
 
+    // 3: Next Page (>) and Previous Page (<) Shortcuts
+    if (e.key === '>' || e.key === '<' || ((e.key === '.' || e.key === ',') && !isInputActive(e))) {
+      if (settings.shortcutPageNav !== false) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === '>' || e.key === '.') {
+          navigateToNextPage();
+        } else if (e.key === '<' || e.key === ',') {
+          navigateToPreviousPage();
+        }
+        return;
+      }
+    }
+
     // Bypass remaining shortcuts ONLY if user is actively typing in a non-annotation text field (e.g. Chapter Title)
     if (isInputActive(e)) return;
 
     const mainAudio = getMainAudioElement();
 
-    // 3: Number keys 1 to 9 to select audio annotations (NO INPUT FOCUS!)
+    // 4: Number keys 1 to 9 to select audio annotations (NO INPUT FOCUS!)
     if (!e.altKey && !e.ctrlKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
       if (!settings.shortcutNumbers) return;
       e.preventDefault();
@@ -1075,7 +1152,7 @@
       return;
     }
 
-    // 4: Square Bracket [ (Set Start Time to Current Audio Time)
+    // 5: Square Bracket [ (Set Start Time to Current Audio Time)
     if (e.key === '[' || e.code === 'BracketLeft') {
       if (!settings.shortcutBrackets) return;
       e.preventDefault();
@@ -1111,7 +1188,7 @@
       return;
     }
 
-    // 5: Square Bracket ] (Set End Time + Optional Deadline Mode Fast Flow)
+    // 6: Square Bracket ] (Set End Time + Optional Deadline Mode Fast Flow)
     if (e.key === ']' || e.code === 'BracketRight') {
       if (!settings.shortcutBrackets) return;
       e.preventDefault();
@@ -1173,8 +1250,8 @@
       return;
     }
 
-    // 6: Backtick Key ` (Set End Time of Selected Annotation to FULL Main Audio Duration)
-    if (e.key === '`' || e.code === 'Backquote') {
+    // 7: Backtick Key ` or Tilde ~ (Set End Time of Selected Annotation to Audio Duration MINUS 0.01s Safety Buffer)
+    if (e.key === '`' || e.key === '~' || e.code === 'Backquote') {
       if (!settings.shortcutAudioEnd) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1204,7 +1281,18 @@
         return;
       }
 
-      const formattedDuration = Number(totalDuration.toFixed(settings.precision || 3));
+      // Subtract safe 0.01s buffer so value never exceeds max bounds or triggers HTML5 number range failure
+      let safeEndTime = Math.max(0, totalDuration - 0.01);
+
+      // Also check max attribute on input if present
+      if (endInput.hasAttribute('max')) {
+        const maxAttr = parseFloat(endInput.getAttribute('max'));
+        if (!isNaN(maxAttr) && maxAttr > 0) {
+          safeEndTime = Math.min(safeEndTime, maxAttr - 0.01);
+        }
+      }
+
+      const formattedDuration = Number(safeEndTime.toFixed(settings.precision || 3));
       setNativeInputValue(endInput, formattedDuration);
       blurActiveElement();
 
@@ -1213,11 +1301,11 @@
         saveOrUpdateAnnotation(selectedCard, selectedIndex);
       }
 
-      showToast('🏁', `Annotation #${selectedIndex} End Time (Full Audio):`, formatTimeDisplay(totalDuration));
+      showToast('🏁', `Annotation #${selectedIndex} End Time (Safe Max):`, formatTimeDisplay(formattedDuration));
       return;
     }
 
-    // 7: Side Arrow Keys (Left / Right) to seek 5 seconds
+    // 8: Side Arrow Keys (Left / Right) to seek 5 seconds
     if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
       if (!settings.shortcutSeek) return;
       e.preventDefault();
@@ -1243,7 +1331,7 @@
       return;
     }
 
-    // 8: Up and Down Arrow Keys to speed up or slow down playback rate
+    // 9: Up and Down Arrow Keys to speed up or slow down playback rate
     if (e.key === 'ArrowUp' || e.code === 'ArrowUp') {
       if (!settings.shortcutSpeed) return;
       e.preventDefault();

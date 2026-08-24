@@ -14,7 +14,7 @@
         <img src="../assets/icon48.png" alt="Logo" class="brand-logo">
         <div class="brand-text">
           <h1>MST Annotation Helper</h1>
-          <span class="version">v1.5.0</span>
+          <span class="version">v1.6.0</span>
         </div>
       </div>
       <div class="status-badge active" id="statusBadge">
@@ -112,11 +112,23 @@
         <div class="card item-card">
           <div class="shortcut-icon audio-end-icon">🏁</div>
           <div class="card-info">
-            <span class="card-title">Backtick Key `<span class="key-badge">`</span>`</span>
-            <span class="card-desc">Set End Time to full audio duration</span>
+            <span class="card-title">Backtick / Tilde `<span class="key-badge">`</span>` / `<span class="key-badge">~</span>`</span>
+            <span class="card-desc">Set End Time to audio duration (minus 0.01s buffer)</span>
           </div>
           <label class="toggle-switch small">
             <input type="checkbox" id="toggleAudioEnd" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="card item-card">
+          <div class="shortcut-icon pagenav-icon">↔️</div>
+          <div class="card-info">
+            <span class="card-title">Page Navigation `<span class="key-badge">&lt;</span>` / `<span class="key-badge">&gt;</span>`</span>
+            <span class="card-desc">Navigate to Previous (`<`) or Next (`>`) page</span>
+          </div>
+          <label class="toggle-switch small">
+            <input type="checkbox" id="togglePageNav" checked>
             <span class="slider round"></span>
           </label>
         </div>
@@ -203,7 +215,8 @@
     <section class="section">
       <h2 class="section-title">Shortcut Guide</h2>
       <div class="cheat-sheet">
-        <div class="cheat-row"><span class="key">`</span><span class="desc">Set End Time to full audio duration</span></div>
+        <div class="cheat-row"><span class="key">&lt; / &gt;</span><span class="desc">Navigate Previous / Next Page</span></div>
+        <div class="cheat-row"><span class="key">` or ~</span><span class="desc">End Time = Audio Duration - 0.01s</span></div>
         <div class="cheat-row"><span class="key">[</span><span class="desc">Set Start Time (player time)</span></div>
         <div class="cheat-row"><span class="key">]</span><span class="desc">Set End Time (player time)</span></div>
         <div class="cheat-row"><span class="key">Alt + M</span><span class="desc">Open Moveable Timing Manager</span></div>
