@@ -201,30 +201,56 @@
 
   // --- Sidebar Page List Scanner ---
   function getSidebarPageList() {
+    // 1. If sidebar drawer is closed, open it if possible
+    const openSidebarBtn = document.querySelector('button[aria-label*="Open sidebar" i], button.jss253');
+    if (openSidebarBtn && !document.querySelector('a[href*="/pages/"]')) {
+      triggerClick(openSidebarBtn);
+    }
+
     const allLinks = Array.from(document.querySelectorAll('a[href*="/pages/"]'));
     const pages = [];
+    const seenIds = new Set();
+
     allLinks.forEach((link) => {
       const href = link.getAttribute('href') || '';
-      if (href.includes('/settings') || href.includes('/resources')) return;
-      const match = href.match(/\/pages\/([a-f0-9-]+)/i);
-      if (match) {
-        const text = link.textContent.trim();
-        const numMatch = text.match(/\b(\d+)\b/);
-        const pageNum = numMatch ? parseInt(numMatch[1], 10) : (pages.length + 1);
-        const isCurrent = link.getAttribute('aria-current') === 'page' ||
-                          link.classList.contains('active') ||
-                          link.classList.contains('jss687') ||
-                          window.location.pathname.includes(match[1]) ||
-                          !!link.querySelector('[aria-current="page"]');
-        pages.push({
-          element: link,
-          pageId: match[1],
-          href: href,
-          pageNum: pageNum,
-          isCurrent: isCurrent
-        });
+      // Filter out links that are not section page cards (e.g. settings, resources, tts, audio)
+      if (href.includes('/settings') || href.includes('/resources') || href.includes('/tts') || href.includes('/audio')) return;
+
+      const match = href.match(/\/pages\/([a-f0-9-]+)(?:\/editor)?$/i);
+      if (!match) return;
+
+      const pageId = match[1];
+      if (seenIds.has(pageId)) return;
+
+      const text = link.textContent.trim();
+      const numMatch = text.match(/\b(\d+)\b/);
+
+      // Exclude text navigation buttons (e.g. "Preview", "Back to Contents")
+      const lettersOnly = text.replace(/[\d\s]/g, '');
+      if (lettersOnly.length > 0 && !link.querySelector('img')) {
+        return;
       }
+
+      if (!numMatch) return;
+      const pageNum = parseInt(numMatch[1], 10);
+
+      const isCurrent = link.getAttribute('aria-current') === 'page' ||
+                        link.classList.contains('active') ||
+                        link.classList.contains('jss687') ||
+                        window.location.pathname.includes(pageId) ||
+                        !!link.querySelector('[aria-current="page"]');
+
+      seenIds.add(pageId);
+      pages.push({
+        element: link,
+        pageId: pageId,
+        href: href,
+        pageNum: pageNum,
+        isCurrent: isCurrent
+      });
     });
+
+    pages.sort((a, b) => a.pageNum - b.pageNum);
     return pages;
   }
 
@@ -1422,10 +1448,9 @@
   }
 
   // ==========================================================================
-  // --- HTML Publishing Parser (CodeMirror Scraper) Feature ---
+  // --- HTML Publishing Parser (Direct Machine Downloader) Feature ---
   // ==========================================================================
   let htmlParserContainer = null;
-  let parserSelectedDirHandle = null;
   let parserScannedInfo = null;
   let isHtmlScrapingActive = false;
 
@@ -1448,18 +1473,26 @@
 
   function scanChapterInfo() {
     let chapterTitle = '';
+    // 1. Try input[name="sectionTitle"]
     const titleInput = document.querySelector('input[name="sectionTitle"]');
     if (titleInput && titleInput.value && titleInput.value.trim()) {
       chapterTitle = titleInput.value.trim();
-    } else {
-      const candidates = Array.from(document.querySelectorAll('p, h1, h2, h3, div'));
-      for (const el of candidates) {
-        const text = el.textContent.trim();
-        const pageMatch = text.match(/^(.*?)\s*-\s*PAGE\s*\d+/i);
-        if (pageMatch && pageMatch[1]) {
+    }
+
+    // 2. Try header paragraph containing "... - PAGE \d+" (e.g. jss352 or jss715)
+    let headerPageNum = null;
+    const candidates = Array.from(document.querySelectorAll('p, h1, h2, h3, div'));
+    for (const el of candidates) {
+      const text = el.textContent.trim();
+      const pageMatch = text.match(/^(.*?)\s*-\s*PAGE\s*(\d+)/i);
+      if (pageMatch) {
+        if (!chapterTitle && pageMatch[1]) {
           chapterTitle = pageMatch[1].trim();
-          break;
         }
+        if (pageMatch[2]) {
+          headerPageNum = parseInt(pageMatch[2], 10);
+        }
+        break;
       }
     }
 
@@ -1469,14 +1502,64 @@
 
     const pages = getSidebarPageList();
     const currentIdx = pages.findIndex(p => p.isCurrent);
-    const currentPageNum = currentIdx !== -1 ? pages[currentIdx].pageNum : 1;
+    const currentPageNum = headerPageNum || (currentIdx !== -1 ? pages[currentIdx].pageNum : 1);
+    const totalPages = pages.length > 0 ? pages[pages.length - 1].pageNum : 1;
 
     return {
       chapterTitle,
       pages,
-      totalPages: pages.length,
+      totalPages: Math.max(totalPages, pages.length),
       currentPageNum
     };
+  }
+
+  // Direct file download handler to save on machine without any external API
+  async function saveHtmlFileToMachine(filename, htmlContent, subfolder = '') {
+    const cleanFilename = sanitizeFilename(filename);
+    const targetPath = subfolder ? `${sanitizeFilename(subfolder)}/${cleanFilename}` : cleanFilename;
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+
+    // 1. Try background service worker download (silent into subfolder)
+    try {
+      const res = await new Promise((resolve) => {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({
+            action: 'downloadFile',
+            url: blobUrl,
+            filename: targetPath
+          }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.success) {
+              resolve(false);
+            } else {
+              resolve(true);
+            }
+          });
+        } else {
+          resolve(false);
+        }
+      });
+
+      if (res) {
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        return true;
+      }
+    } catch (e) {
+      // fallback below
+    }
+
+    // 2. Direct browser human-like download fallback (always works)
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = cleanFilename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (a.parentElement) a.parentElement.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 1000);
+    return true;
   }
 
   function extractCodeMirrorHtml() {
@@ -1520,6 +1603,7 @@
   function switchToHtmlTab() {
     if (document.querySelector('.CodeMirror')) return true;
 
+    // Search 3rd navbar for <> HTML tab
     const editorTab = document.querySelector('[name="editor"]') ||
                       document.querySelector('.jss379') ||
                       document.querySelector('a[href$="/editor"]') ||
@@ -1553,10 +1637,6 @@
 
   function openHtmlParserModal() {
     parserScannedInfo = scanChapterInfo();
-    if (parserScannedInfo.totalPages === 0) {
-      showToast('⚠️', 'No chapter pages detected in sidebar to parse');
-      return;
-    }
 
     if (!htmlParserContainer) {
       htmlParserContainer = document.createElement('div');
@@ -1572,32 +1652,10 @@
     if (isHtmlScrapingActive) {
       isHtmlScrapingActive = false;
     }
-    parserSelectedDirHandle = null;
     parserScannedInfo = null;
     if (htmlParserContainer) {
       htmlParserContainer.style.display = 'none';
       htmlParserContainer.innerHTML = '';
-    }
-  }
-
-  async function selectOutputFolder() {
-    try {
-      if (typeof window.showDirectoryPicker !== 'function') {
-        showToast('⚠️', 'File System Access API is not supported in this browser context');
-        return;
-      }
-      parserSelectedDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      const statusEl = document.getElementById('mstFolderStatus');
-      if (statusEl) {
-        statusEl.textContent = `📁 ${parserSelectedDirHandle.name}`;
-        statusEl.classList.add('selected');
-        statusEl.title = `Target Folder: ${parserSelectedDirHandle.name}`;
-      }
-      updateParserRunBtnState();
-    } catch (err) {
-      if (err.name !== 'AbortError') {
-        showToast('⚠️', 'Folder selection was cancelled');
-      }
     }
   }
 
@@ -1623,8 +1681,7 @@
                          startVal >= 1 && endVal <= parserScannedInfo.totalPages &&
                          startVal <= endVal;
 
-    const canRun = !!parserSelectedDirHandle && isValidRange && !isHtmlScrapingActive;
-    runBtn.disabled = !canRun;
+    runBtn.disabled = !isValidRange || isHtmlScrapingActive;
   }
 
   function renderHtmlParserModalContent() {
@@ -1644,29 +1701,30 @@
               <p class="mst-modal-subtitle">Zero-edit CodeMirror HTML scraper for chapter pages</p>
             </div>
           </div>
-          <button class="mst-modal-close-btn" id="mstParserCloseX" title="Close and clear cache">&times;</button>
+          <button class="mst-modal-close-btn" id="mstParserCloseX" title="Close and clear">&times;</button>
         </div>
 
         <!-- Form Body -->
         <div class="mst-parser-body">
           <!-- Info Banner -->
           <div class="mst-parser-info">
-            <strong>Chapter:</strong> ${escapeHtml(parserScannedInfo.chapterTitle)}<br>
-            <strong>Pages Detected:</strong> ${parserScannedInfo.totalPages} pages in sidebar
+            <strong>Chapter:</strong> <span id="mstParserChapterDisplay">${escapeHtml(parserScannedInfo.chapterTitle)}</span><br>
+            <strong>Pages Detected:</strong> <span id="mstParserTotalPages">${parserScannedInfo.totalPages}</span> pages in chapter (Current: Page ${parserScannedInfo.currentPageNum})
           </div>
 
-          <!-- Output Folder Row -->
+          <!-- Direct Download Subfolder Input -->
           <div class="mst-form-row">
-            <label class="mst-form-label">
-              Output Folder <span class="mst-req">*</span>
-              <span class="mst-hint-tooltip" data-tip="Choose the folder on your computer where HTML files will be saved">?</span>
+            <label class="mst-form-label" for="mstInputSubfolder">
+              Subfolder Name (Optional):
+              <span class="mst-hint-tooltip" data-tip="Downloads into Downloads/<Subfolder>/ on your computer">?</span>
             </label>
-            <div class="mst-folder-picker-bar">
-              <button class="mst-btn mst-btn-secondary" id="mstBtnPickFolder" type="button">
-                📁 Choose Folder <span class="mst-req">*</span>
-              </button>
-              <div class="mst-folder-status" id="mstFolderStatus">No folder selected *</div>
-            </div>
+            <input type="text" id="mstInputSubfolder" class="mst-parser-input" value="${escapeHtml(safeTitle)}">
+          </div>
+
+          <!-- Direct Machine Download Note -->
+          <div class="mst-direct-download-note">
+            <span>💾</span>
+            <span>Direct machine export &bull; Files download directly into your Downloads folder</span>
           </div>
 
           <!-- Page Range Horizontal Row -->
@@ -1691,7 +1749,7 @@
           <div class="mst-form-row">
             <label class="mst-form-label">
               File Naming Preview:
-              <span class="mst-hint-tooltip" data-tip="Format parsed from chapter & page number">?</span>
+              <span class="mst-hint-tooltip" data-tip="Naming parsed from chapter & page number">?</span>
             </label>
             <div class="mst-preview-box" id="mstNamingPreview">${escapeHtml(initialPreview)}</div>
           </div>
@@ -1711,7 +1769,7 @@
         <!-- Footer -->
         <div class="mst-parser-footer">
           <button class="mst-btn mst-btn-secondary" id="mstBtnCancelParser" type="button">Close</button>
-          <button class="mst-btn mst-btn-teal" id="mstBtnRunParser" type="button" disabled>🚀 Start Export</button>
+          <button class="mst-btn mst-btn-teal" id="mstBtnRunParser" type="button">🚀 Start Export (${parserScannedInfo.totalPages} pages)</button>
         </div>
       </div>
     `;
@@ -1726,7 +1784,6 @@
     // Attach Event Handlers
     document.getElementById('mstParserCloseX')?.addEventListener('click', closeHtmlParserModal);
     document.getElementById('mstBtnCancelParser')?.addEventListener('click', closeHtmlParserModal);
-    document.getElementById('mstBtnPickFolder')?.addEventListener('click', selectOutputFolder);
 
     const startInput = document.getElementById('mstInputStartPage');
     const endInput = document.getElementById('mstInputEndPage');
@@ -1752,12 +1809,15 @@
   }
 
   async function runHtmlScraper() {
-    if (!parserSelectedDirHandle || !parserScannedInfo) return;
+    if (!parserScannedInfo) return;
 
     const startInput = document.getElementById('mstInputStartPage');
     const endInput = document.getElementById('mstInputEndPage');
+    const subfolderInput = document.getElementById('mstInputSubfolder');
+
     const startPage = parseInt(startInput?.value, 10) || 1;
     const endPage = parseInt(endInput?.value, 10) || parserScannedInfo.totalPages;
+    const subfolder = subfolderInput?.value?.trim() || '';
 
     const progressBox = document.getElementById('mstParserProgress');
     const progressBarFill = document.getElementById('mstProgressBarFill');
@@ -1827,44 +1887,41 @@
       }
       if (!chapterName) chapterName = parserScannedInfo.chapterTitle || 'Chapter';
 
-      // 6. Write pristine file to local folder
+      // 6. Directly save file on machine
       const safeChapter = sanitizeFilename(chapterName);
       const fileName = `${safeChapter} - Page ${String(p).padStart(2, '0')}.html`;
 
       try {
-        const fileHandle = await parserSelectedDirHandle.getFileHandle(fileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        await writable.write(htmlCode);
-        await writable.close();
+        await saveHtmlFileToMachine(fileName, htmlCode, subfolder);
         savedCount++;
       } catch (writeErr) {
-        console.error('Failed to write file:', fileName, writeErr);
+        console.error('Failed to download file:', fileName, writeErr);
       }
 
       const completedPct = Math.round((currentStep / totalToScrape) * 100);
-      if (progressText) progressText.textContent = `Page ${p} saved! (${currentStep}/${totalToScrape})`;
+      if (progressText) progressText.textContent = `Page ${p} exported! (${currentStep}/${totalToScrape})`;
       if (progressPercent) progressPercent.textContent = `${completedPct}%`;
       if (progressBarFill) progressBarFill.style.width = `${completedPct}%`;
 
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 400));
     }
 
     const wasActive = isHtmlScrapingActive;
     isHtmlScrapingActive = false;
 
     if (runBtn) {
-      runBtn.textContent = '🚀 Start Export';
+      runBtn.textContent = `🚀 Start Export (${parserScannedInfo.totalPages} pages)`;
       runBtn.className = 'mst-btn mst-btn-teal';
       updateParserRunBtnState();
     }
     if (closeBtn) closeBtn.disabled = false;
 
     if (wasActive) {
-      if (progressText) progressText.textContent = `Completed! ${savedCount} pages exported.`;
-      showToast('🎉', 'Export Complete!', `${savedCount} pages saved`);
+      if (progressText) progressText.textContent = `Completed! ${savedCount} pages exported directly to machine.`;
+      showToast('🎉', 'Export Complete!', `${savedCount} pages downloaded`);
     } else {
       if (progressText) progressText.textContent = `Stopped. ${savedCount} pages exported.`;
-      showToast('⏹️', 'Export Stopped', `${savedCount} pages saved`);
+      showToast('⏹️', 'Export Stopped', `${savedCount} pages downloaded`);
     }
   }
 
