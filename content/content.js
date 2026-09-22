@@ -1582,74 +1582,105 @@
     return true;
   }
 
-  // Focus edit_panel and extract CodeMirror HTML cleanly
-  function extractCodeMirrorHtml() {
+  // Request CodeMirror HTML from page_bridge.js running in MAIN execution world
+  function extractCodeMirrorFromBridge(timeoutMs = 1500) {
     return new Promise((resolve) => {
-      // Focus edit_panel and CodeMirror wrapper
-      const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"]');
-      if (editPanel) {
-        triggerClick(editPanel);
-        if (typeof editPanel.focus === 'function') editPanel.focus();
-      }
-      const cmEl = document.querySelector('.CodeMirror');
-      if (cmEl) {
-        triggerClick(cmEl);
-        if (typeof cmEl.focus === 'function') cmEl.focus();
-        const ta = cmEl.querySelector('textarea');
-        if (ta && typeof ta.focus === 'function') ta.focus();
+      const reqId = 'cm_' + Math.random().toString(36).substring(2, 9);
+      let resolved = false;
+
+      function handleMsg(e) {
+        if (e.source !== window || !e.data || e.data.type !== 'MST_RESP_CODEMIRROR') return;
+        if (e.data.reqId !== reqId) return;
+
+        resolved = true;
+        window.removeEventListener('message', handleMsg);
+        resolve(e.data.code || '');
       }
 
-      const eventId = 'mst_cm_read_' + Math.random().toString(36).substring(2, 9);
-      function handleResult(e) {
-        window.removeEventListener(eventId, handleResult);
-        resolve(e.detail ? (e.detail.code || '') : '');
-      }
-      window.addEventListener(eventId, handleResult);
+      window.addEventListener('message', handleMsg);
 
-      const script = document.createElement('script');
-      script.textContent = `(function() {
-        try {
-          const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"]');
-          if (editPanel && typeof editPanel.focus === 'function') {
-            editPanel.focus();
-          }
-          const cmEl = document.querySelector('.CodeMirror');
-          if (cmEl && cmEl.CodeMirror) {
-            const cm = cmEl.CodeMirror;
-            cm.focus();
-            // Simulate Ctrl+A to select all content
-            cm.execCommand('selectAll');
-            // Simulate Ctrl+C / copy entire content
-            const code = cm.getSelection() || cm.getValue() || '';
-            // Non-destructive: collapse selection to line 0 col 0 immediately
-            cm.setCursor(0, 0);
-            window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: code } }));
-            return;
-          }
-          if (cmEl) {
-            const ta = cmEl.querySelector('textarea');
-            if (ta && ta.value) {
-              window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: ta.value } }));
-              return;
-            }
-          }
-          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: '' } }));
-        } catch(err) {
-          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: '' } }));
-        }
-      })();`;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
+      window.postMessage({
+        type: 'MST_REQ_CODEMIRROR',
+        reqId: reqId
+      }, '*');
 
       setTimeout(() => {
-        window.removeEventListener(eventId, handleResult);
-        if (cmEl) {
-          const ta = cmEl.querySelector('textarea');
-          if (ta && ta.value) return resolve(ta.value);
+        if (!resolved) {
+          window.removeEventListener('message', handleMsg);
+          resolve('');
         }
-        resolve('');
-      }, 2500);
+      }, timeoutMs);
     });
+  }
+
+  // Directly extract lines from .CodeMirror-code in the DOM as fallback
+  function extractFromCodeMirrorDom() {
+    const lineEls = Array.from(document.querySelectorAll('.CodeMirror-code .CodeMirror-line, .CodeMirror-line'));
+    if (!lineEls || lineEls.length === 0) return '';
+
+    const lines = lineEls.map(el => {
+      // Strip CodeMirror zero-width spaces (\u200b) on blank lines
+      return el.textContent.replace(/\u200b/g, '');
+    });
+
+    return lines.join('\n');
+  }
+
+  // Click inside CodeMirror and extract HTML cleanly (using both bridge and DOM)
+  async function extractCodeMirrorHtml() {
+    // 1. Focus & click edit_panel
+    const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"], [class*="MuiBox-root"][class*="edit_panel"]');
+    if (editPanel) {
+      triggerClick(editPanel);
+      if (typeof editPanel.focus === 'function') editPanel.focus();
+    }
+
+    // 2. Focus & click CodeMirror wrapper
+    const cmEl = document.querySelector('.CodeMirror');
+    if (cmEl) {
+      triggerClick(cmEl);
+      if (typeof cmEl.focus === 'function') cmEl.focus();
+    }
+
+    // 3. Make click inside CodeMirror-code as user requested
+    const cmCode = document.querySelector('.CodeMirror-code, .CodeMirror-lines');
+    if (cmCode) {
+      triggerClick(cmCode);
+      const firstLine = cmCode.querySelector('.CodeMirror-line');
+      if (firstLine) triggerClick(firstLine);
+    }
+
+    // 4. Focus textarea
+    if (cmEl) {
+      const ta = cmEl.querySelector('textarea');
+      if (ta) {
+        if (typeof ta.focus === 'function') ta.focus();
+        triggerClick(ta);
+      }
+    }
+
+    // 5. Query page_bridge.js in MAIN world (gets 100% full CodeMirror document)
+    let bridgeCode = '';
+    try {
+      bridgeCode = await extractCodeMirrorFromBridge(1200);
+    } catch (e) {
+      bridgeCode = '';
+    }
+
+    // 6. Direct DOM line extraction fallback
+    const domCode = extractFromCodeMirrorDom();
+
+    // Pick whichever is richer / valid populated HTML
+    if (bridgeCode && isPopulatedPageHtml(bridgeCode)) {
+      return bridgeCode;
+    }
+    if (domCode && isPopulatedPageHtml(domCode)) {
+      return domCode;
+    }
+    if (bridgeCode.length > domCode.length) {
+      return bridgeCode;
+    }
+    return domCode;
   }
 
   function switchToHtmlTab() {

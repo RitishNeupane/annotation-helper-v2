@@ -35,12 +35,32 @@
         "https://publishing.mysecondteacher.com/*"
       ],
       "js": [
+        "content/page_bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://publishing.mysecondteacher.com/*"
+      ],
+      "js": [
         "content/content.js"
       ],
       "css": [
         "content/content.css"
       ],
       "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/page_bridge.js"
+      ],
+      "matches": [
+        "https://publishing.mysecondteacher.com/*"
+      ]
     }
   ],
   "browser_specific_settings": {
