@@ -544,8 +544,9 @@
 .mst-parser-card {
   background: #111827;
   color: #f3f4f6;
-  width: 500px;
+  width: 560px;
   max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 50px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(13, 148, 136, 0.35);
@@ -564,7 +565,9 @@
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: calc(100vh - 170px);
 }
 
 /* Info Banner */
@@ -615,7 +618,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   color: #ffffff;
-  padding: 7px 10px;
+  padding: 6px 10px;
   font-size: 12px;
   width: 100%;
   box-sizing: border-box;
@@ -626,6 +629,17 @@
 .mst-parser-input:focus {
   border-color: #14b8a6;
   box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
+}
+
+.mst-parser-select {
+  background: #1f2937;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #ffffff;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  outline: none;
+  cursor: pointer;
 }
 
 .mst-direct-download-note {
@@ -640,44 +654,143 @@
   gap: 6px;
 }
 
-/* Folder Selector Bar */
-.mst-folder-picker-bar {
+/* Naming Customizer Section */
+.mst-naming-section {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mst-naming-section-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #e2e8f0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
 }
 
-.mst-folder-status {
-  flex: 1;
-  background: #1f2937;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+.mst-naming-blocks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  gap: 8px;
+}
+
+.mst-naming-col {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 11.5px;
-  color: #9ca3af;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.mst-folder-status.selected {
-  border-color: #10b981;
-  border-style: solid;
-  color: #6ee7b7;
-  background: rgba(16, 185, 129, 0.1);
-  font-weight: 600;
+.mst-naming-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.mst-toggle-btn {
+  background: #334155;
+  border: none;
+  color: #cbd5e1;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mst-toggle-btn:hover {
+  background: #475569;
+  color: #ffffff;
+}
+
+.mst-toggle-btn.active {
+  background: #0d9488;
+  color: #ffffff;
+}
+
+.mst-checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mst-checkbox-group input[type="checkbox"] {
+  accent-color: #0d9488;
+  cursor: pointer;
+  margin: 0;
+}
+
+.mst-collapsed {
+  display: none !important;
 }
 
 /* Naming Preview Box */
 .mst-preview-box {
-  background: #0f172a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #020617;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: #93c5fd;
+  color: #38bdf8;
   word-break: break-all;
+  line-height: 1.4;
+}
+
+.mst-pill-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  width: 100%;
+  justify-content: center;
+}
+
+.mst-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.mst-sync-btn {
+  background: #334155;
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.mst-sync-btn:hover {
+  background: #475569;
+  color: #ffffff;
 }
 
 /* Tooltip Hint */

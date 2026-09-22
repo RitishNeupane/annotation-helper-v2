@@ -1454,6 +1454,18 @@
   let parserScannedInfo = null;
   let isHtmlScrapingActive = false;
 
+  let parserNamingState = {
+    prefixEnabled: false,
+    prefixVal: '',
+    prefixAutoIncrement: false,
+    nameVal: '',
+    useSitePageName: false,
+    suffixEnabled: true,
+    suffixVal: 'Page',
+    suffixAutoIncrement: true,
+    padDigits: 3
+  };
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -1479,16 +1491,22 @@
       chapterTitle = titleInput.value.trim();
     }
 
-    // 2. Try header paragraph containing "... - PAGE \d+" (e.g. jss352 or jss715)
+    // 2. Try unit/book title elements (e.g. jss190, jss193)
+    let unitTitle = '';
+    const unitEl = document.querySelector('.jss190, .jss193, [class*="jss190"], [class*="jss193"]');
+    if (unitEl && unitEl.textContent.trim()) {
+      unitTitle = unitEl.textContent.split('|')[0].trim();
+    }
+
+    // 3. Try header paragraph containing "... - PAGE \d+" (e.g. jss352 or jss715)
     let headerPageNum = null;
+    let headerParsedTitle = '';
     const candidates = Array.from(document.querySelectorAll('p, h1, h2, h3, div'));
     for (const el of candidates) {
       const text = el.textContent.trim();
       const pageMatch = text.match(/^(.*?)\s*-\s*PAGE\s*(\d+)/i);
       if (pageMatch) {
-        if (!chapterTitle && pageMatch[1]) {
-          chapterTitle = pageMatch[1].trim();
-        }
+        headerParsedTitle = pageMatch[1].trim();
         if (pageMatch[2]) {
           headerPageNum = parseInt(pageMatch[2], 10);
         }
@@ -1497,7 +1515,7 @@
     }
 
     if (!chapterTitle) {
-      chapterTitle = document.title.split('|')[0].trim() || 'Chapter';
+      chapterTitle = headerParsedTitle || unitTitle || document.title.split('|')[0].trim() || 'Chapter';
     }
 
     const pages = getSidebarPageList();
@@ -1507,6 +1525,8 @@
 
     return {
       chapterTitle,
+      unitTitle,
+      headerParsedTitle,
       pages,
       totalPages: Math.max(totalPages, pages.length),
       currentPageNum
@@ -1562,11 +1582,21 @@
     return true;
   }
 
+  // Focus edit_panel and extract CodeMirror HTML cleanly
   function extractCodeMirrorHtml() {
     return new Promise((resolve) => {
+      // Focus edit_panel and CodeMirror wrapper
+      const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"]');
+      if (editPanel) {
+        triggerClick(editPanel);
+        if (typeof editPanel.focus === 'function') editPanel.focus();
+      }
       const cmEl = document.querySelector('.CodeMirror');
-      if (cmEl && cmEl.CodeMirror && typeof cmEl.CodeMirror.getValue === 'function') {
-        return resolve(cmEl.CodeMirror.getValue());
+      if (cmEl) {
+        triggerClick(cmEl);
+        if (typeof cmEl.focus === 'function') cmEl.focus();
+        const ta = cmEl.querySelector('textarea');
+        if (ta && typeof ta.focus === 'function') ta.focus();
       }
 
       const eventId = 'mst_cm_read_' + Math.random().toString(36).substring(2, 9);
@@ -1579,9 +1609,31 @@
       const script = document.createElement('script');
       script.textContent = `(function() {
         try {
-          const el = document.querySelector('.CodeMirror');
-          const code = el && el.CodeMirror ? el.CodeMirror.getValue() : '';
-          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: code } }));
+          const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"]');
+          if (editPanel && typeof editPanel.focus === 'function') {
+            editPanel.focus();
+          }
+          const cmEl = document.querySelector('.CodeMirror');
+          if (cmEl && cmEl.CodeMirror) {
+            const cm = cmEl.CodeMirror;
+            cm.focus();
+            // Simulate Ctrl+A to select all content
+            cm.execCommand('selectAll');
+            // Simulate Ctrl+C / copy entire content
+            const code = cm.getSelection() || cm.getValue() || '';
+            // Non-destructive: collapse selection to line 0 col 0 immediately
+            cm.setCursor(0, 0);
+            window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: code } }));
+            return;
+          }
+          if (cmEl) {
+            const ta = cmEl.querySelector('textarea');
+            if (ta && ta.value) {
+              window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: ta.value } }));
+              return;
+            }
+          }
+          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: '' } }));
         } catch(err) {
           window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: '' } }));
         }
@@ -1620,23 +1672,157 @@
     return false;
   }
 
-  function waitForCodeMirror(timeoutMs = 4000) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const interval = setInterval(() => {
-        if (document.querySelector('.CodeMirror')) {
-          clearInterval(interval);
-          resolve(true);
-        } else if (Date.now() - start > timeoutMs) {
-          clearInterval(interval);
-          resolve(false);
-        }
-      }, 100);
-    });
+  // Check if CodeMirror HTML contains genuine populated page content (not just empty skeleton)
+  function isPopulatedPageHtml(code) {
+    if (!code || typeof code !== 'string') return false;
+    const trimmed = code.trim();
+    if (trimmed.length < 150) return false;
+
+    // Strip head and body wrappers to check for inner page content
+    const stripped = trimmed
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<\/?html[^>]*>/gi, '')
+      .replace(/<head>[\s\S]*?<\/head>/gi, '')
+      .replace(/<\/?body[^>]*>/gi, '')
+      .replace(/<div class="loader[^>]*>[\s\S]*?<\/div>/gi, '')
+      .trim();
+
+    if (stripped.length < 30) return false;
+
+    // Real book pages have styled divs, spans, or text
+    return trimmed.includes('<div') || trimmed.includes('<style') || trimmed.includes('class=') || trimmed.includes('id=');
+  }
+
+  // Polls until CodeMirror is populated with ACTUAL page content (not just empty skeleton)
+  async function waitForPopulatedCodeMirror(timeoutMs = 12000, lastPageHtml = '') {
+    const start = Date.now();
+    let bestCode = '';
+
+    while (Date.now() - start < timeoutMs) {
+      if (!isHtmlScrapingActive) break;
+
+      // Ensure HTML tab is active
+      switchToHtmlTab();
+
+      // Click & focus edit_panel and CodeMirror
+      const editPanel = document.querySelector('.edit_panel, [class*="edit_panel"]');
+      if (editPanel) {
+        triggerClick(editPanel);
+        if (typeof editPanel.focus === 'function') editPanel.focus();
+      }
+      const cmEl = document.querySelector('.CodeMirror');
+      if (cmEl) {
+        triggerClick(cmEl);
+        if (typeof cmEl.focus === 'function') cmEl.focus();
+        const ta = cmEl.querySelector('textarea');
+        if (ta && typeof ta.focus === 'function') ta.focus();
+      }
+
+      const code = await extractCodeMirrorHtml();
+      if (code && code.length > bestCode.length) {
+        bestCode = code;
+      }
+
+      const isPopulated = isPopulatedPageHtml(code);
+      const isStale = (lastPageHtml && code === lastPageHtml && (Date.now() - start < 1500));
+
+      if (isPopulated && !isStale) {
+        // Extra pause to ensure all lines are loaded
+        await new Promise(r => setTimeout(r, 350));
+        const confirmed = await extractCodeMirrorHtml();
+        return (confirmed && confirmed.length >= code.length) ? confirmed : code;
+      }
+
+      await new Promise(r => setTimeout(r, 350));
+    }
+
+    return bestCode;
+  }
+
+  // Dynamically extract the current lesson / page name from header breadcrumb or MuiBox
+  function extractCurrentSitePageName(pageNum) {
+    const candidates = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div, span'));
+
+    if (pageNum !== undefined) {
+      const pageRegex = new RegExp(`^(.*?)\\s*-\\s*PAGE\\s*${pageNum}\\b`, 'i');
+      for (const el of candidates) {
+        const text = el.textContent.trim();
+        const m = text.match(pageRegex);
+        if (m && m[1]) return m[1].trim();
+      }
+    }
+
+    for (const el of candidates) {
+      const text = el.textContent.trim();
+      const m = text.match(/^(.*?)\s*-\s*PAGE\s*\d+/i);
+      if (m && m[1]) return m[1].trim();
+    }
+
+    const input = document.querySelector('input[name="sectionTitle"]');
+    if (input && input.value && input.value.trim()) return input.value.trim();
+
+    const header = document.querySelector('.jss190, .jss193, [class*="jss19"], .MuiTypography-h6');
+    if (header && header.textContent) {
+      const t = header.textContent.split('|')[0].trim();
+      if (t) return t;
+    }
+
+    return '';
+  }
+
+  // Generate dynamic filename based on user naming configuration
+  function generatePageFilename(pageNum, pageSiteTitle = '') {
+    const padCount = parserNamingState.padDigits || 3;
+    const numStr = padCount > 1 ? String(pageNum).padStart(padCount, '0') : String(pageNum);
+
+    let parts = [];
+
+    // 1. Prefix (allow '0' and custom strings, collapsible when disabled)
+    if (!parserNamingState.prefixDisabled) {
+      let pfx = parserNamingState.prefixVal;
+      if (parserNamingState.prefixAutoIncrement) {
+        pfx = (pfx !== '' && pfx !== undefined) ? `${pfx}${numStr}` : numStr;
+      }
+      if (pfx !== '' && pfx !== undefined) {
+        parts.push(pfx);
+      }
+    }
+
+    // 2. Base Name
+    let baseName = '';
+    if (parserNamingState.useSitePageName && pageSiteTitle) {
+      baseName = sanitizeFilename(pageSiteTitle);
+    } else if (parserNamingState.nameVal) {
+      baseName = sanitizeFilename(parserNamingState.nameVal);
+    } else if (parserScannedInfo && parserScannedInfo.chapterTitle) {
+      baseName = sanitizeFilename(parserScannedInfo.chapterTitle);
+    }
+    if (baseName) {
+      parts.push(baseName);
+    }
+
+    // 3. Suffix (collapsible when disabled, auto-increment & numbering normalizer)
+    if (!parserNamingState.suffixDisabled) {
+      let sfx = parserNamingState.suffixVal;
+      if (parserNamingState.suffixAutoIncrement) {
+        sfx = (sfx !== '' && sfx !== undefined) ? `${sfx}${numStr}` : numStr;
+      }
+      if (sfx !== '' && sfx !== undefined) {
+        parts.push(sfx);
+      }
+    }
+
+    let finalName = parts.join(' - ').trim();
+    if (!finalName) {
+      finalName = `Page_${numStr}`;
+    }
+
+    return `${finalName}.html`;
   }
 
   function openHtmlParserModal() {
     parserScannedInfo = scanChapterInfo();
+    parserNamingState.nameVal = parserScannedInfo.chapterTitle || 'Chapter';
 
     if (!htmlParserContainer) {
       htmlParserContainer = document.createElement('div');
@@ -1661,12 +1847,16 @@
 
   function updateParserNamingPreview() {
     const previewEl = document.getElementById('mstNamingPreview');
-    const startInput = document.getElementById('mstInputStartPage');
     if (!previewEl || !parserScannedInfo) return;
 
-    const startVal = startInput ? parseInt(startInput.value, 10) || 1 : 1;
-    const safeChapter = sanitizeFilename(parserScannedInfo.chapterTitle || 'Chapter');
-    previewEl.textContent = `${safeChapter} - Page ${String(startVal).padStart(2, '0')}.html`;
+    const startInput = document.getElementById('mstInputStartPage');
+    const startPage = parseInt(startInput?.value, 10) || 1;
+
+    const sitePageTitle = extractCurrentSitePageName(startPage) || parserScannedInfo.headerParsedTitle;
+    const p1 = generatePageFilename(startPage, sitePageTitle);
+    const p2 = generatePageFilename(startPage + 1, sitePageTitle);
+
+    previewEl.innerHTML = `Page ${startPage}: <strong>${escapeHtml(p1)}</strong><br>Page ${startPage + 1}: <strong>${escapeHtml(p2)}</strong>`;
   }
 
   function updateParserRunBtnState() {
@@ -1688,7 +1878,6 @@
     if (!htmlParserContainer || !parserScannedInfo) return;
 
     const safeTitle = sanitizeFilename(parserScannedInfo.chapterTitle);
-    const initialPreview = `${safeTitle} - Page 01.html`;
 
     htmlParserContainer.innerHTML = `
       <div class="mst-parser-card" id="mstParserWindow">
@@ -1712,12 +1901,15 @@
             <strong>Pages Detected:</strong> <span id="mstParserTotalPages">${parserScannedInfo.totalPages}</span> pages in chapter (Current: Page ${parserScannedInfo.currentPageNum})
           </div>
 
-          <!-- Direct Download Subfolder Input -->
+          <!-- Output Folder Name Row with Re-sync -->
           <div class="mst-form-row">
-            <label class="mst-form-label" for="mstInputSubfolder">
-              Subfolder Name (Optional):
-              <span class="mst-hint-tooltip" data-tip="Downloads into Downloads/<Subfolder>/ on your computer">?</span>
-            </label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label class="mst-form-label" for="mstInputSubfolder" style="margin-bottom: 0;">
+                Output Folder Name (in Downloads):
+                <span class="mst-hint-tooltip" data-tip="Downloads into Downloads/<Folder Name>/ on your computer">?</span>
+              </label>
+              <button type="button" class="mst-sync-btn" id="mstBtnSyncChapter" title="Re-parse chapter name from page">🔄 Sync from Page</button>
+            </div>
             <input type="text" id="mstInputSubfolder" class="mst-parser-input" value="${escapeHtml(safeTitle)}">
           </div>
 
@@ -1725,6 +1917,97 @@
           <div class="mst-direct-download-note">
             <span>💾</span>
             <span>Direct machine export &bull; Files download directly into your Downloads folder</span>
+          </div>
+
+          <!-- Naming Configuration Box -->
+          <div class="mst-naming-section">
+            <div class="mst-naming-section-title">
+              <span>File Naming Controls</span>
+              <span style="font-size: 11px; color: #94a3b8;">Customize Prefix, Base Name & Suffix</span>
+            </div>
+
+            <div class="mst-naming-blocks-grid">
+              <!-- Prefix Column -->
+              <div class="mst-naming-col">
+                <div class="mst-naming-col-header">
+                  <span>Prefix</span>
+                  <label class="mst-checkbox-group">
+                    <input type="checkbox" id="mstChkPrefixDisable" ${parserNamingState.prefixDisabled ? 'checked' : ''}>
+                    <span>Disable</span>
+                  </label>
+                </div>
+                <!-- Pill shown when disabled -->
+                <div id="mstPrefixPillContainer" class="${parserNamingState.prefixDisabled ? '' : 'mst-collapsed'}">
+                  <button type="button" class="mst-pill-btn" id="mstBtnOpenPrefix">[Prefix] (Disabled &bull; Click to Enable)</button>
+                </div>
+                <!-- Full controls when enabled -->
+                <div id="mstPrefixControls" class="${parserNamingState.prefixDisabled ? 'mst-collapsed' : ''}">
+                  <input type="text" id="mstInputPrefix" class="mst-parser-input" placeholder="e.g. 0 or Chap_" value="${escapeHtml(parserNamingState.prefixVal)}">
+                  <label class="mst-checkbox-group" style="margin-top: 5px;">
+                    <input type="checkbox" id="mstChkPrefixInc" ${parserNamingState.prefixAutoIncrement ? 'checked' : ''}>
+                    <span>Auto-increment</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Name Column -->
+              <div class="mst-naming-col">
+                <div class="mst-naming-col-header">
+                  <span>Base Name</span>
+                  <label class="mst-checkbox-group">
+                    <input type="checkbox" id="mstChkUseSitePageName" ${parserNamingState.useSitePageName ? 'checked' : ''}>
+                    <span>Use site page name</span>
+                  </label>
+                </div>
+                <div>
+                  <input type="text" id="mstInputName" class="mst-parser-input" placeholder="Title/Name" value="${escapeHtml(parserNamingState.nameVal)}">
+                  <div style="font-size: 10px; color: #94a3b8; margin-top: 5px;" id="mstNameHint">
+                    ${parserNamingState.useSitePageName ? '✨ Parsed from page header' : 'Custom entered name'}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Suffix Column -->
+              <div class="mst-naming-col">
+                <div class="mst-naming-col-header">
+                  <span>Suffix</span>
+                  <label class="mst-checkbox-group">
+                    <input type="checkbox" id="mstChkSuffixDisable" ${parserNamingState.suffixDisabled ? 'checked' : ''}>
+                    <span>Disable</span>
+                  </label>
+                </div>
+                <!-- Pill shown when disabled -->
+                <div id="mstSuffixPillContainer" class="${parserNamingState.suffixDisabled ? '' : 'mst-collapsed'}">
+                  <button type="button" class="mst-pill-btn" id="mstBtnOpenSuffix">[Suffix] (Disabled &bull; Click to Enable)</button>
+                </div>
+                <!-- Full controls when enabled -->
+                <div id="mstSuffixControls" class="${parserNamingState.suffixDisabled ? 'mst-collapsed' : ''}">
+                  <input type="text" id="mstInputSuffix" class="mst-parser-input" placeholder="e.g. Page" value="${escapeHtml(parserNamingState.suffixVal)}">
+                  <label class="mst-checkbox-group" style="margin-top: 5px;">
+                    <input type="checkbox" id="mstChkSuffixInc" ${parserNamingState.suffixAutoIncrement ? 'checked' : ''}>
+                    <span>Auto-increment</span>
+                  </label>
+                  <div style="margin-top: 5px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 10px; color: #94a3b8;">Normalizer:</span>
+                    <select id="mstSelectPadDigits" class="mst-parser-select">
+                      <option value="1" ${parserNamingState.padDigits === 1 ? 'selected' : ''}>1 (No pad)</option>
+                      <option value="2" ${parserNamingState.padDigits === 2 ? 'selected' : ''}>01 (2 digits)</option>
+                      <option value="3" ${parserNamingState.padDigits === 3 ? 'selected' : ''}>001 (3 digits)</option>
+                      <option value="4" ${parserNamingState.padDigits === 4 ? 'selected' : ''}>0001 (4 digits)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Naming Preview Row -->
+            <div class="mst-form-row" style="margin-top: 4px;">
+              <label class="mst-form-label">
+                Live Naming Preview:
+                <span class="mst-hint-tooltip" data-tip="Preview of how files will be named when exported">?</span>
+              </label>
+              <div class="mst-preview-box" id="mstNamingPreview"></div>
+            </div>
           </div>
 
           <!-- Page Range Horizontal Row -->
@@ -1743,15 +2026,6 @@
               </label>
               <input type="number" id="mstInputEndPage" class="mst-parser-input" min="1" max="${parserScannedInfo.totalPages}" value="${parserScannedInfo.totalPages}">
             </div>
-          </div>
-
-          <!-- Naming Scheme Preview Row -->
-          <div class="mst-form-row">
-            <label class="mst-form-label">
-              File Naming Preview:
-              <span class="mst-hint-tooltip" data-tip="Naming parsed from chapter & page number">?</span>
-            </label>
-            <div class="mst-preview-box" id="mstNamingPreview">${escapeHtml(initialPreview)}</div>
           </div>
 
           <!-- Live Progress Section -->
@@ -1796,6 +2070,108 @@
       updateParserRunBtnState();
     });
 
+    // Re-sync chapter title button
+    const btnSync = document.getElementById('mstBtnSyncChapter');
+    btnSync?.addEventListener('click', () => {
+      parserScannedInfo = scanChapterInfo();
+      const chapterDisplay = document.getElementById('mstParserChapterDisplay');
+      const subfolderInput = document.getElementById('mstInputSubfolder');
+      if (chapterDisplay) chapterDisplay.textContent = parserScannedInfo.chapterTitle;
+      if (subfolderInput) subfolderInput.value = sanitizeFilename(parserScannedInfo.chapterTitle);
+      updateParserNamingPreview();
+    });
+
+    // Prefix Controls Listeners
+    const chkPrefixDisable = document.getElementById('mstChkPrefixDisable');
+    const prefixPillContainer = document.getElementById('mstPrefixPillContainer');
+    const prefixControls = document.getElementById('mstPrefixControls');
+    const btnOpenPrefix = document.getElementById('mstBtnOpenPrefix');
+
+    function setPrefixDisabled(disabled) {
+      parserNamingState.prefixDisabled = disabled;
+      if (chkPrefixDisable) chkPrefixDisable.checked = disabled;
+      prefixPillContainer?.classList.toggle('mst-collapsed', !disabled);
+      prefixControls?.classList.toggle('mst-collapsed', disabled);
+      updateParserNamingPreview();
+    }
+
+    chkPrefixDisable?.addEventListener('change', (e) => {
+      setPrefixDisabled(e.target.checked);
+    });
+    btnOpenPrefix?.addEventListener('click', () => {
+      setPrefixDisabled(false);
+    });
+
+    const inputPrefix = document.getElementById('mstInputPrefix');
+    inputPrefix?.addEventListener('input', (e) => {
+      parserNamingState.prefixVal = e.target.value;
+      updateParserNamingPreview();
+    });
+
+    const chkPrefixInc = document.getElementById('mstChkPrefixInc');
+    chkPrefixInc?.addEventListener('change', (e) => {
+      parserNamingState.prefixAutoIncrement = e.target.checked;
+      updateParserNamingPreview();
+    });
+
+    // Base Name Controls Listeners
+    const inputName = document.getElementById('mstInputName');
+    inputName?.addEventListener('input', (e) => {
+      parserNamingState.nameVal = e.target.value;
+      updateParserNamingPreview();
+    });
+
+    const chkUseSitePageName = document.getElementById('mstChkUseSitePageName');
+    const nameHint = document.getElementById('mstNameHint');
+    chkUseSitePageName?.addEventListener('change', (e) => {
+      parserNamingState.useSitePageName = e.target.checked;
+      if (nameHint) {
+        nameHint.textContent = parserNamingState.useSitePageName ? '✨ Parsed from page header' : 'Custom entered name';
+      }
+      updateParserNamingPreview();
+    });
+
+    // Suffix Controls Listeners
+    const chkSuffixDisable = document.getElementById('mstChkSuffixDisable');
+    const suffixPillContainer = document.getElementById('mstSuffixPillContainer');
+    const suffixControls = document.getElementById('mstSuffixControls');
+    const btnOpenSuffix = document.getElementById('mstBtnOpenSuffix');
+
+    function setSuffixDisabled(disabled) {
+      parserNamingState.suffixDisabled = disabled;
+      if (chkSuffixDisable) chkSuffixDisable.checked = disabled;
+      suffixPillContainer?.classList.toggle('mst-collapsed', !disabled);
+      suffixControls?.classList.toggle('mst-collapsed', disabled);
+      updateParserNamingPreview();
+    }
+
+    chkSuffixDisable?.addEventListener('change', (e) => {
+      setSuffixDisabled(e.target.checked);
+    });
+    btnOpenSuffix?.addEventListener('click', () => {
+      setSuffixDisabled(false);
+    });
+
+    const inputSuffix = document.getElementById('mstInputSuffix');
+    inputSuffix?.addEventListener('input', (e) => {
+      parserNamingState.suffixVal = e.target.value;
+      updateParserNamingPreview();
+    });
+
+    const chkSuffixInc = document.getElementById('mstChkSuffixInc');
+    chkSuffixInc?.addEventListener('change', (e) => {
+      parserNamingState.suffixAutoIncrement = e.target.checked;
+      updateParserNamingPreview();
+    });
+
+    const selectPadDigits = document.getElementById('mstSelectPadDigits');
+    selectPadDigits?.addEventListener('change', (e) => {
+      parserNamingState.padDigits = parseInt(e.target.value, 10) || 3;
+      updateParserNamingPreview();
+    });
+
+    updateParserNamingPreview();
+
     const runBtn = document.getElementById('mstBtnRunParser');
     runBtn?.addEventListener('click', () => {
       if (isHtmlScrapingActive) {
@@ -1836,6 +2212,7 @@
 
     isHtmlScrapingActive = true;
     let savedCount = 0;
+    let lastExportedHtml = '';
     const totalToScrape = Math.max(1, endPage - startPage + 1);
 
     for (let p = startPage; p <= endPage; p++) {
@@ -1847,14 +2224,17 @@
       if (progressPercent) progressPercent.textContent = `${pct}%`;
       if (progressBarFill) progressBarFill.style.width = `${pct}%`;
 
-      // 1. Find sidebar page card
+      // 1. Find sidebar page card and navigate
       const sidebarPages = getSidebarPageList();
       const targetPage = sidebarPages.find(item => item.pageNum === p) || sidebarPages[p - 1];
 
       if (targetPage && targetPage.element) {
         if (!targetPage.isCurrent) {
+          if (typeof targetPage.element.scrollIntoView === 'function') {
+            targetPage.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
           triggerClick(targetPage.element);
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 600));
         }
       }
 
@@ -1863,34 +2243,21 @@
       // 2. Ensure we switch to HTML tab (3rd navbar button <> HTML)
       switchToHtmlTab();
 
-      // 3. Wait for CodeMirror to mount
-      const cmReady = await waitForCodeMirror(4000);
-      if (!cmReady) {
-        switchToHtmlTab();
-        await waitForCodeMirror(2000);
-      }
-      await new Promise(r => setTimeout(r, 350));
+      // 3. Focus edit_panel and wait until CodeMirror is POPULATED with actual page HTML
+      if (progressText) progressText.textContent = `Loading HTML for Page ${p}...`;
+      const htmlCode = await waitForPopulatedCodeMirror(12000, lastExportedHtml);
 
       if (!isHtmlScrapingActive) break;
 
-      // 4. Extract CodeMirror HTML cleanly
-      const htmlCode = await extractCodeMirrorHtml();
+      lastExportedHtml = htmlCode;
 
-      // 5. Read current page title / chapter name from page header
-      let chapterName = '';
-      const pHeader = document.querySelector('input[name="sectionTitle"]') ||
-                      Array.from(document.querySelectorAll('p, div')).find(el => el.textContent.includes(`PAGE ${p}`) || el.textContent.includes(`Page ${p}`));
-      if (pHeader) {
-        const text = pHeader.value || pHeader.textContent || '';
-        const m = text.match(/^(.*?)\s*-\s*PAGE/i);
-        if (m && m[1]) chapterName = m[1].trim();
-      }
-      if (!chapterName) chapterName = parserScannedInfo.chapterTitle || 'Chapter';
+      // 4. Read current page title from page header
+      const pageSiteTitle = extractCurrentSitePageName(p);
+
+      // 5. Generate filename from user naming settings
+      const fileName = generatePageFilename(p, pageSiteTitle);
 
       // 6. Directly save file on machine
-      const safeChapter = sanitizeFilename(chapterName);
-      const fileName = `${safeChapter} - Page ${String(p).padStart(2, '0')}.html`;
-
       try {
         await saveHtmlFileToMachine(fileName, htmlCode, subfolder);
         savedCount++;
@@ -1899,7 +2266,7 @@
       }
 
       const completedPct = Math.round((currentStep / totalToScrape) * 100);
-      if (progressText) progressText.textContent = `Page ${p} exported! (${currentStep}/${totalToScrape})`;
+      if (progressText) progressText.textContent = `Page ${p} exported (${htmlCode.length} bytes)! (${currentStep}/${totalToScrape})`;
       if (progressPercent) progressPercent.textContent = `${completedPct}%`;
       if (progressBarFill) progressBarFill.style.width = `${completedPct}%`;
 
