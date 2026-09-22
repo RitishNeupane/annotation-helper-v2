@@ -55,6 +55,9 @@
       if (message && message.action === 'openTimingManager') {
         openTimingManagerModal();
         sendResponse({ success: true });
+      } else if (message && message.action === 'openHtmlParser') {
+        openHtmlParserModal();
+        sendResponse({ success: true });
       }
     });
   } else {
@@ -196,12 +199,57 @@
     }
   }
 
+  // --- Sidebar Page List Scanner ---
+  function getSidebarPageList() {
+    const allLinks = Array.from(document.querySelectorAll('a[href*="/pages/"]'));
+    const pages = [];
+    allLinks.forEach((link) => {
+      const href = link.getAttribute('href') || '';
+      if (href.includes('/settings') || href.includes('/resources')) return;
+      const match = href.match(/\/pages\/([a-f0-9-]+)/i);
+      if (match) {
+        const text = link.textContent.trim();
+        const numMatch = text.match(/\b(\d+)\b/);
+        const pageNum = numMatch ? parseInt(numMatch[1], 10) : (pages.length + 1);
+        const isCurrent = link.getAttribute('aria-current') === 'page' ||
+                          link.classList.contains('active') ||
+                          link.classList.contains('jss687') ||
+                          window.location.pathname.includes(match[1]) ||
+                          !!link.querySelector('[aria-current="page"]');
+        pages.push({
+          element: link,
+          pageId: match[1],
+          href: href,
+          pageNum: pageNum,
+          isCurrent: isCurrent
+        });
+      }
+    });
+    return pages;
+  }
+
   // --- Next Page Navigation Helper ---
   function navigateToNextPage() {
+    // 1. Prioritize reliable sidebar thumbnail list
+    const sidebarPages = getSidebarPageList();
+    if (sidebarPages.length > 0) {
+      const currentIdx = sidebarPages.findIndex(p => p.isCurrent);
+      if (currentIdx !== -1 && currentIdx < sidebarPages.length - 1) {
+        const nextTarget = sidebarPages[currentIdx + 1];
+        triggerClick(nextTarget.element);
+        blurActiveElement();
+        showToast('▶️', `Navigating to Page ${nextTarget.pageNum}`);
+        return;
+      } else if (currentIdx === sidebarPages.length - 1) {
+        showToast('ℹ️', 'Already on the last page of this chapter');
+        return;
+      }
+    }
+
+    // 2. Fallback to chevron buttons if sidebar is not yet indexed
     const allSvgs = Array.from(document.querySelectorAll('svg'));
     let nextBtn = null;
 
-    // Search for SVG path matching "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
     for (let svg of allSvgs) {
       const path = svg.querySelector('path');
       if (!path) continue;
@@ -213,7 +261,6 @@
       }
     }
 
-    // Fallback for Next Page aria-label or class
     if (!nextBtn) {
       nextBtn = document.querySelector('button[aria-label*="next" i], button[title*="next" i], .MuiPaginationItem-next');
     }
@@ -229,10 +276,26 @@
 
   // --- Previous Page Navigation Helper ---
   function navigateToPreviousPage() {
+    // 1. Prioritize reliable sidebar thumbnail list
+    const sidebarPages = getSidebarPageList();
+    if (sidebarPages.length > 0) {
+      const currentIdx = sidebarPages.findIndex(p => p.isCurrent);
+      if (currentIdx > 0) {
+        const prevTarget = sidebarPages[currentIdx - 1];
+        triggerClick(prevTarget.element);
+        blurActiveElement();
+        showToast('◀️', `Navigating to Page ${prevTarget.pageNum}`);
+        return;
+      } else if (currentIdx === 0) {
+        showToast('ℹ️', 'Already on the first page of this chapter');
+        return;
+      }
+    }
+
+    // 2. Fallback to chevron buttons if sidebar is not yet indexed
     const allSvgs = Array.from(document.querySelectorAll('svg'));
     let prevBtn = null;
 
-    // Search for ChevronLeft SVG path matching "M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"
     for (let svg of allSvgs) {
       const path = svg.querySelector('path');
       if (!path) continue;
@@ -244,7 +307,6 @@
       }
     }
 
-    // Fallback for Previous Page aria-label or class
     if (!prevBtn) {
       prevBtn = document.querySelector('button[aria-label*="previous" i], button[aria-label*="prev" i], button[title*="prev" i], .MuiPaginationItem-previous');
     }
@@ -1359,4 +1421,452 @@
     }
   }
 
+  // ==========================================================================
+  // --- HTML Publishing Parser (CodeMirror Scraper) Feature ---
+  // ==========================================================================
+  let htmlParserContainer = null;
+  let parserSelectedDirHandle = null;
+  let parserScannedInfo = null;
+  let isHtmlScrapingActive = false;
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function sanitizeFilename(name) {
+    return (name || 'Chapter_Page')
+      .replace(/[\\/:*?"<>|]/g, ' - ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function scanChapterInfo() {
+    let chapterTitle = '';
+    const titleInput = document.querySelector('input[name="sectionTitle"]');
+    if (titleInput && titleInput.value && titleInput.value.trim()) {
+      chapterTitle = titleInput.value.trim();
+    } else {
+      const candidates = Array.from(document.querySelectorAll('p, h1, h2, h3, div'));
+      for (const el of candidates) {
+        const text = el.textContent.trim();
+        const pageMatch = text.match(/^(.*?)\s*-\s*PAGE\s*\d+/i);
+        if (pageMatch && pageMatch[1]) {
+          chapterTitle = pageMatch[1].trim();
+          break;
+        }
+      }
+    }
+
+    if (!chapterTitle) {
+      chapterTitle = document.title.split('|')[0].trim() || 'Chapter';
+    }
+
+    const pages = getSidebarPageList();
+    const currentIdx = pages.findIndex(p => p.isCurrent);
+    const currentPageNum = currentIdx !== -1 ? pages[currentIdx].pageNum : 1;
+
+    return {
+      chapterTitle,
+      pages,
+      totalPages: pages.length,
+      currentPageNum
+    };
+  }
+
+  function extractCodeMirrorHtml() {
+    return new Promise((resolve) => {
+      const cmEl = document.querySelector('.CodeMirror');
+      if (cmEl && cmEl.CodeMirror && typeof cmEl.CodeMirror.getValue === 'function') {
+        return resolve(cmEl.CodeMirror.getValue());
+      }
+
+      const eventId = 'mst_cm_read_' + Math.random().toString(36).substring(2, 9);
+      function handleResult(e) {
+        window.removeEventListener(eventId, handleResult);
+        resolve(e.detail ? (e.detail.code || '') : '');
+      }
+      window.addEventListener(eventId, handleResult);
+
+      const script = document.createElement('script');
+      script.textContent = `(function() {
+        try {
+          const el = document.querySelector('.CodeMirror');
+          const code = el && el.CodeMirror ? el.CodeMirror.getValue() : '';
+          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: code } }));
+        } catch(err) {
+          window.dispatchEvent(new CustomEvent('${eventId}', { detail: { code: '' } }));
+        }
+      })();`;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+
+      setTimeout(() => {
+        window.removeEventListener(eventId, handleResult);
+        if (cmEl) {
+          const ta = cmEl.querySelector('textarea');
+          if (ta && ta.value) return resolve(ta.value);
+        }
+        resolve('');
+      }, 2500);
+    });
+  }
+
+  function switchToHtmlTab() {
+    if (document.querySelector('.CodeMirror')) return true;
+
+    const editorTab = document.querySelector('[name="editor"]') ||
+                      document.querySelector('.jss379') ||
+                      document.querySelector('a[href$="/editor"]') ||
+                      Array.from(document.querySelectorAll('a, button, div')).find(el => {
+                        const t = el.textContent.trim();
+                        return (t === 'HTML' || t.includes('HTML')) &&
+                               (el.getAttribute('role') === 'button' || el.tagName === 'A' || el.classList.contains('jss741') || el.classList.contains('jss742'));
+                      });
+
+    if (editorTab) {
+      triggerClick(editorTab);
+      return true;
+    }
+    return false;
+  }
+
+  function waitForCodeMirror(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (document.querySelector('.CodeMirror')) {
+          clearInterval(interval);
+          resolve(true);
+        } else if (Date.now() - start > timeoutMs) {
+          clearInterval(interval);
+          resolve(false);
+        }
+      }, 100);
+    });
+  }
+
+  function openHtmlParserModal() {
+    parserScannedInfo = scanChapterInfo();
+    if (parserScannedInfo.totalPages === 0) {
+      showToast('⚠️', 'No chapter pages detected in sidebar to parse');
+      return;
+    }
+
+    if (!htmlParserContainer) {
+      htmlParserContainer = document.createElement('div');
+      htmlParserContainer.id = 'mst-html-parser-root';
+      document.body.appendChild(htmlParserContainer);
+    }
+
+    renderHtmlParserModalContent();
+    htmlParserContainer.style.display = 'block';
+  }
+
+  function closeHtmlParserModal() {
+    if (isHtmlScrapingActive) {
+      isHtmlScrapingActive = false;
+    }
+    parserSelectedDirHandle = null;
+    parserScannedInfo = null;
+    if (htmlParserContainer) {
+      htmlParserContainer.style.display = 'none';
+      htmlParserContainer.innerHTML = '';
+    }
+  }
+
+  async function selectOutputFolder() {
+    try {
+      if (typeof window.showDirectoryPicker !== 'function') {
+        showToast('⚠️', 'File System Access API is not supported in this browser context');
+        return;
+      }
+      parserSelectedDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const statusEl = document.getElementById('mstFolderStatus');
+      if (statusEl) {
+        statusEl.textContent = `📁 ${parserSelectedDirHandle.name}`;
+        statusEl.classList.add('selected');
+        statusEl.title = `Target Folder: ${parserSelectedDirHandle.name}`;
+      }
+      updateParserRunBtnState();
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        showToast('⚠️', 'Folder selection was cancelled');
+      }
+    }
+  }
+
+  function updateParserNamingPreview() {
+    const previewEl = document.getElementById('mstNamingPreview');
+    const startInput = document.getElementById('mstInputStartPage');
+    if (!previewEl || !parserScannedInfo) return;
+
+    const startVal = startInput ? parseInt(startInput.value, 10) || 1 : 1;
+    const safeChapter = sanitizeFilename(parserScannedInfo.chapterTitle || 'Chapter');
+    previewEl.textContent = `${safeChapter} - Page ${String(startVal).padStart(2, '0')}.html`;
+  }
+
+  function updateParserRunBtnState() {
+    const runBtn = document.getElementById('mstBtnRunParser');
+    const startInput = document.getElementById('mstInputStartPage');
+    const endInput = document.getElementById('mstInputEndPage');
+    if (!runBtn || !parserScannedInfo) return;
+
+    const startVal = parseInt(startInput?.value, 10);
+    const endVal = parseInt(endInput?.value, 10);
+    const isValidRange = !isNaN(startVal) && !isNaN(endVal) &&
+                         startVal >= 1 && endVal <= parserScannedInfo.totalPages &&
+                         startVal <= endVal;
+
+    const canRun = !!parserSelectedDirHandle && isValidRange && !isHtmlScrapingActive;
+    runBtn.disabled = !canRun;
+  }
+
+  function renderHtmlParserModalContent() {
+    if (!htmlParserContainer || !parserScannedInfo) return;
+
+    const safeTitle = sanitizeFilename(parserScannedInfo.chapterTitle);
+    const initialPreview = `${safeTitle} - Page 01.html`;
+
+    htmlParserContainer.innerHTML = `
+      <div class="mst-parser-card" id="mstParserWindow">
+        <!-- Draggable Header -->
+        <div class="mst-modal-header" id="mstParserDragHeader">
+          <div class="mst-modal-title-group">
+            <span class="mst-modal-icon">📑</span>
+            <div>
+              <h3 class="mst-modal-title">HTML Publishing Parser</h3>
+              <p class="mst-modal-subtitle">Zero-edit CodeMirror HTML scraper for chapter pages</p>
+            </div>
+          </div>
+          <button class="mst-modal-close-btn" id="mstParserCloseX" title="Close and clear cache">&times;</button>
+        </div>
+
+        <!-- Form Body -->
+        <div class="mst-parser-body">
+          <!-- Info Banner -->
+          <div class="mst-parser-info">
+            <strong>Chapter:</strong> ${escapeHtml(parserScannedInfo.chapterTitle)}<br>
+            <strong>Pages Detected:</strong> ${parserScannedInfo.totalPages} pages in sidebar
+          </div>
+
+          <!-- Output Folder Row -->
+          <div class="mst-form-row">
+            <label class="mst-form-label">
+              Output Folder <span class="mst-req">*</span>
+              <span class="mst-hint-tooltip" data-tip="Choose the folder on your computer where HTML files will be saved">?</span>
+            </label>
+            <div class="mst-folder-picker-bar">
+              <button class="mst-btn mst-btn-secondary" id="mstBtnPickFolder" type="button">
+                📁 Choose Folder <span class="mst-req">*</span>
+              </button>
+              <div class="mst-folder-status" id="mstFolderStatus">No folder selected *</div>
+            </div>
+          </div>
+
+          <!-- Page Range Horizontal Row -->
+          <div class="mst-form-row-horizontal">
+            <div class="mst-form-row">
+              <label class="mst-form-label" for="mstInputStartPage">
+                Start Page <span class="mst-req">*</span>
+                <span class="mst-hint-tooltip" data-tip="First page number to export">?</span>
+              </label>
+              <input type="number" id="mstInputStartPage" class="mst-parser-input" min="1" max="${parserScannedInfo.totalPages}" value="1">
+            </div>
+            <div class="mst-form-row">
+              <label class="mst-form-label" for="mstInputEndPage">
+                End Page <span class="mst-req">*</span>
+                <span class="mst-hint-tooltip" data-tip="Last page number to export">?</span>
+              </label>
+              <input type="number" id="mstInputEndPage" class="mst-parser-input" min="1" max="${parserScannedInfo.totalPages}" value="${parserScannedInfo.totalPages}">
+            </div>
+          </div>
+
+          <!-- Naming Scheme Preview Row -->
+          <div class="mst-form-row">
+            <label class="mst-form-label">
+              File Naming Preview:
+              <span class="mst-hint-tooltip" data-tip="Format parsed from chapter & page number">?</span>
+            </label>
+            <div class="mst-preview-box" id="mstNamingPreview">${escapeHtml(initialPreview)}</div>
+          </div>
+
+          <!-- Live Progress Section -->
+          <div class="mst-parser-progress" id="mstParserProgress">
+            <div class="mst-progress-status-text">
+              <span id="mstProgressText">Ready</span>
+              <span id="mstProgressPercent">0%</span>
+            </div>
+            <div class="mst-progress-bar-bg">
+              <div class="mst-progress-bar-fill" id="mstProgressBarFill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mst-parser-footer">
+          <button class="mst-btn mst-btn-secondary" id="mstBtnCancelParser" type="button">Close</button>
+          <button class="mst-btn mst-btn-teal" id="mstBtnRunParser" type="button" disabled>🚀 Start Export</button>
+        </div>
+      </div>
+    `;
+
+    // Make Draggable
+    const windowCard = document.getElementById('mstParserWindow');
+    const dragHeader = document.getElementById('mstParserDragHeader');
+    if (windowCard && dragHeader) {
+      makeElementDraggable(windowCard, dragHeader);
+    }
+
+    // Attach Event Handlers
+    document.getElementById('mstParserCloseX')?.addEventListener('click', closeHtmlParserModal);
+    document.getElementById('mstBtnCancelParser')?.addEventListener('click', closeHtmlParserModal);
+    document.getElementById('mstBtnPickFolder')?.addEventListener('click', selectOutputFolder);
+
+    const startInput = document.getElementById('mstInputStartPage');
+    const endInput = document.getElementById('mstInputEndPage');
+
+    startInput?.addEventListener('input', () => {
+      updateParserNamingPreview();
+      updateParserRunBtnState();
+    });
+    endInput?.addEventListener('input', () => {
+      updateParserRunBtnState();
+    });
+
+    const runBtn = document.getElementById('mstBtnRunParser');
+    runBtn?.addEventListener('click', () => {
+      if (isHtmlScrapingActive) {
+        isHtmlScrapingActive = false;
+        runBtn.textContent = 'Stopping...';
+        runBtn.disabled = true;
+      } else {
+        runHtmlScraper();
+      }
+    });
+  }
+
+  async function runHtmlScraper() {
+    if (!parserSelectedDirHandle || !parserScannedInfo) return;
+
+    const startInput = document.getElementById('mstInputStartPage');
+    const endInput = document.getElementById('mstInputEndPage');
+    const startPage = parseInt(startInput?.value, 10) || 1;
+    const endPage = parseInt(endInput?.value, 10) || parserScannedInfo.totalPages;
+
+    const progressBox = document.getElementById('mstParserProgress');
+    const progressBarFill = document.getElementById('mstProgressBarFill');
+    const progressText = document.getElementById('mstProgressText');
+    const progressPercent = document.getElementById('mstProgressPercent');
+    const runBtn = document.getElementById('mstBtnRunParser');
+    const closeBtn = document.getElementById('mstBtnCancelParser');
+
+    if (progressBox) progressBox.style.display = 'flex';
+    if (runBtn) {
+      runBtn.textContent = '⏹️ Stop Export';
+      runBtn.className = 'mst-btn mst-btn-danger';
+      runBtn.disabled = false;
+    }
+    if (closeBtn) closeBtn.disabled = true;
+
+    isHtmlScrapingActive = true;
+    let savedCount = 0;
+    const totalToScrape = Math.max(1, endPage - startPage + 1);
+
+    for (let p = startPage; p <= endPage; p++) {
+      if (!isHtmlScrapingActive) break;
+
+      const currentStep = p - startPage + 1;
+      const pct = Math.round(((currentStep - 0.5) / totalToScrape) * 100);
+      if (progressText) progressText.textContent = `Navigating to Page ${p} (${currentStep}/${totalToScrape})...`;
+      if (progressPercent) progressPercent.textContent = `${pct}%`;
+      if (progressBarFill) progressBarFill.style.width = `${pct}%`;
+
+      // 1. Find sidebar page card
+      const sidebarPages = getSidebarPageList();
+      const targetPage = sidebarPages.find(item => item.pageNum === p) || sidebarPages[p - 1];
+
+      if (targetPage && targetPage.element) {
+        if (!targetPage.isCurrent) {
+          triggerClick(targetPage.element);
+          await new Promise(r => setTimeout(r, 800));
+        }
+      }
+
+      if (!isHtmlScrapingActive) break;
+
+      // 2. Ensure we switch to HTML tab (3rd navbar button <> HTML)
+      switchToHtmlTab();
+
+      // 3. Wait for CodeMirror to mount
+      const cmReady = await waitForCodeMirror(4000);
+      if (!cmReady) {
+        switchToHtmlTab();
+        await waitForCodeMirror(2000);
+      }
+      await new Promise(r => setTimeout(r, 350));
+
+      if (!isHtmlScrapingActive) break;
+
+      // 4. Extract CodeMirror HTML cleanly
+      const htmlCode = await extractCodeMirrorHtml();
+
+      // 5. Read current page title / chapter name from page header
+      let chapterName = '';
+      const pHeader = document.querySelector('input[name="sectionTitle"]') ||
+                      Array.from(document.querySelectorAll('p, div')).find(el => el.textContent.includes(`PAGE ${p}`) || el.textContent.includes(`Page ${p}`));
+      if (pHeader) {
+        const text = pHeader.value || pHeader.textContent || '';
+        const m = text.match(/^(.*?)\s*-\s*PAGE/i);
+        if (m && m[1]) chapterName = m[1].trim();
+      }
+      if (!chapterName) chapterName = parserScannedInfo.chapterTitle || 'Chapter';
+
+      // 6. Write pristine file to local folder
+      const safeChapter = sanitizeFilename(chapterName);
+      const fileName = `${safeChapter} - Page ${String(p).padStart(2, '0')}.html`;
+
+      try {
+        const fileHandle = await parserSelectedDirHandle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(htmlCode);
+        await writable.close();
+        savedCount++;
+      } catch (writeErr) {
+        console.error('Failed to write file:', fileName, writeErr);
+      }
+
+      const completedPct = Math.round((currentStep / totalToScrape) * 100);
+      if (progressText) progressText.textContent = `Page ${p} saved! (${currentStep}/${totalToScrape})`;
+      if (progressPercent) progressPercent.textContent = `${completedPct}%`;
+      if (progressBarFill) progressBarFill.style.width = `${completedPct}%`;
+
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    const wasActive = isHtmlScrapingActive;
+    isHtmlScrapingActive = false;
+
+    if (runBtn) {
+      runBtn.textContent = '🚀 Start Export';
+      runBtn.className = 'mst-btn mst-btn-teal';
+      updateParserRunBtnState();
+    }
+    if (closeBtn) closeBtn.disabled = false;
+
+    if (wasActive) {
+      if (progressText) progressText.textContent = `Completed! ${savedCount} pages exported.`;
+      showToast('🎉', 'Export Complete!', `${savedCount} pages saved`);
+    } else {
+      if (progressText) progressText.textContent = `Stopped. ${savedCount} pages exported.`;
+      showToast('⏹️', 'Export Stopped', `${savedCount} pages saved`);
+    }
+  }
+
 })();
+

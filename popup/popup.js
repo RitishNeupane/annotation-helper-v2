@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const toggleToast = document.getElementById('toggleToast');
   
   const btnOpenTimingManager = document.getElementById('btnOpenTimingManager');
+  const btnOpenHtmlParser = document.getElementById('btnOpenHtmlParser');
   const statusBadge = document.getElementById('statusBadge');
   const statusText = document.getElementById('statusText');
 
@@ -140,6 +141,21 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs && tabs[0] && tabs[0].id) {
             chrome.tabs.sendMessage(tabs[0].id, { action: 'openTimingManager' }, () => {
+              window.close();
+            });
+          }
+        });
+      }
+    });
+  }
+
+  // Open HTML Publishing Parser in Active Tab
+  if (btnOpenHtmlParser) {
+    btnOpenHtmlParser.addEventListener('click', () => {
+      if (chrome.tabs && chrome.tabs.query) {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs && tabs[0] && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, { action: 'openHtmlParser' }, () => {
               window.close();
             });
           }

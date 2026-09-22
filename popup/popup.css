@@ -145,6 +145,61 @@ body {
   color: #ffffff;
 }
 
+/* HTML Publishing Parser Action Button */
+.html-parser-btn {
+  background: linear-gradient(135deg, #0d9488, #059669);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.html-parser-btn:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #0f766e, #047857);
+  box-shadow: 0 6px 18px rgba(13, 148, 136, 0.5);
+}
+
+.html-parser-btn:active {
+  transform: translateY(0);
+}
+
+.html-parser-btn .btn-icon {
+  font-size: 20px;
+}
+
+.html-parser-btn .btn-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.html-parser-btn .btn-main-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.html-parser-btn .btn-sub-text {
+  font-size: 10px;
+  color: #ccfbf1;
+}
+
+.html-parser-btn .btn-arrow {
+  font-size: 14px;
+  color: #ffffff;
+}
+
 /* Cards */
 .card {
   background-color: var(--bg-card);
